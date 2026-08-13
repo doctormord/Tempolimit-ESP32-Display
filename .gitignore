@@ -1,0 +1,12 @@
+# Build-Artefakte - regenerierbar, gehoeren nicht ins Repo
+.pio/
+build-sim/
+build-*/
+
+# macOS
+.DS_Store
+
+# Rohdaten aus OSM (mehrere GB) - mit tools/maps.py neu ladbar,
+# siehe README.md/CLAUDE.md
+*.osm.pbf
+tools/pbf/

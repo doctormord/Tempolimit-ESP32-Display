@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tempolimit-Anzeige — Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --night:#12161C;        /* Armaturenbrett bei Nacht */
+    --panel:#1B212A;
+    --edge:#2C3541;
+    --amber:#E8A33D;        /* Instrumentenbeleuchtung */
+    --amber-dim:#8A6428;
+    --text:#D6DCE4;
+    --muted:#7C8797;
+    --sign-red:#C1121F;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--night);color:var(--text);
+    font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:14px}
+  body{padding:24px 20px 56px;line-height:1.5}
+  .wrap{max-width:1080px;margin:0 auto}
+
+  header{border-bottom:1px solid var(--edge);padding-bottom:14px;margin-bottom:26px}
+  h1{font-family:'Archivo',sans-serif;font-weight:800;font-size:19px;
+    letter-spacing:.16em;text-transform:uppercase;margin:0}
+  header p{margin:6px 0 0;color:var(--muted);font-size:12.5px}
+
+  .grid{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:34px;align-items:start}
+  @media(max-width:760px){.grid{grid-template-columns:1fr;gap:26px}}
+
+  /* --- Display im Gehäuse --- */
+  .bezel{width:100%;max-width:340px;aspect-ratio:1;border-radius:50%;
+    background:radial-gradient(circle at 32% 26%,#39424F,#161B22 68%);
+    padding:11px;box-shadow:0 18px 44px rgba(0,0,0,.66),inset 0 1px 0 rgba(255,255,255,.09);
+    margin-inline:auto}
+  .bezel svg{width:100%;height:100%;display:block;border-radius:50%;background:#000}
+  .under{text-align:center;margin-top:14px;font-size:11.5px;color:var(--muted);
+    letter-spacing:.1em;text-transform:uppercase}
+  .under b{color:var(--amber);font-weight:500}
+
+  /* --- Bedienfeld --- */
+  fieldset{border:1px solid var(--edge);border-radius:3px;padding:15px 16px 17px;margin:0 0 16px;
+    background:var(--panel)}
+  legend{font-family:'Archivo',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.19em;
+    text-transform:uppercase;color:var(--amber);padding:0 7px}
+  label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px;
+    letter-spacing:.07em;text-transform:uppercase}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:96px}
+  select,input[type=number]{width:100%;background:#0E1319;color:var(--text);
+    border:1px solid var(--edge);border-radius:2px;padding:7px 9px;
+    font-family:inherit;font-size:14px}
+  select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+  input[type=range]{width:100%;accent-color:var(--amber);margin:2px 0 0}
+  .clock{font-family:'Archivo',sans-serif;font-size:30px;font-weight:700;
+    color:var(--amber);letter-spacing:.04em;line-height:1}
+
+  .days{display:flex;gap:5px;flex-wrap:wrap}
+  .days button{flex:1;min-width:38px;background:#0E1319;color:var(--muted);
+    border:1px solid var(--edge);border-radius:2px;padding:7px 0;cursor:pointer;
+    font-family:inherit;font-size:12px}
+  .days button[aria-pressed=true]{background:var(--amber-dim);color:#12161C;
+    border-color:var(--amber);font-weight:500}
+
+  .btn{background:transparent;border:1px solid var(--amber-dim);color:var(--amber);
+    padding:7px 13px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:12px;
+    letter-spacing:.09em;text-transform:uppercase}
+  .btn:hover{background:var(--amber-dim);color:#12161C}
+
+  .toggle{display:flex;align-items:center;gap:9px;margin-bottom:13px}
+  .toggle input{accent-color:var(--amber);width:16px;height:16px}
+  .toggle label{margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)}
+
+  /* --- Signature: 24-Stunden-Streifen --- */
+  .timeline{margin-top:4px}
+  .bars{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;height:52px}
+  .bars div{background:#0E1319;border-radius:1px;display:flex;align-items:flex-end;
+    justify-content:center;position:relative;transition:background .12s}
+  .bars div span{font-size:9px;color:#0E1319;font-weight:500;padding-bottom:2px}
+  .bars div.on{background:var(--amber)}
+  .bars div.on span{color:#12161C}
+  .bars div.base{background:#333D4A}
+  .bars div.base span{color:var(--muted)}
+  .bars div.now{outline:2px solid #fff;outline-offset:1px;z-index:2}
+  .ticks{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;margin-top:5px;
+    font-size:9.5px;color:var(--muted);text-align:center}
+  .ticks span:nth-child(even){visibility:hidden}
+  @media(max-width:560px){.ticks span:nth-child(3n+2),.ticks span:nth-child(3n+3){visibility:hidden}}
+
+  .presets{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+  .presets button{background:#0E1319;border:1px solid var(--edge);color:var(--text);
+    padding:6px 11px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:11.5px}
+  .presets button:hover{border-color:var(--amber);color:var(--amber)}
+
+  .tag{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);
+    margin-top:11px;padding-top:11px;border-top:1px solid var(--edge)}
+  .tag code{color:var(--amber);background:none}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tempolimit-Anzeige</h1>
+    <p>Simulator für die Schilddarstellung und die zeitabhängige Limit-Logik (<code>maxspeed:conditional</code>). Gleiche Auswertung wie <code>condActive()</code> auf dem ESP32.</p>
+  </header>
+
+  <div class="grid">
+    <div>
+      <div class="bezel">
+        <svg id="sign" viewBox="0 0 360 360" role="img" aria-label="Anzeige"></svg>
+      </div>
+      <p class="under">Angezeigt: <b id="status">–</b></p>
+    </div>
+
+    <div>
+      <fieldset>
+        <legend>Straßendaten</legend>
+        <div class="row">
+          <div>
+            <label for="base">Grundlimit</label>
+            <select id="base">
+              <option value="0">unbekannt</option>
+              <option value="30">30</option>
+              <option value="50" selected>50</option>
+              <option value="70">70</option>
+              <option value="80">80</option>
+              <option value="100">100</option>
+              <option value="120">120</option>
+              <option value="130">130</option>
+              <option value="255">unbegrenzt</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="toggle" style="margin-top:15px">
+          <input type="checkbox" id="hasCond" checked>
+          <label for="hasCond">Zeitliches Limit vorhanden</label>
+        </div>
+
+        <div id="condFields">
+          <div class="row">
+            <div>
+              <label for="condSpeed">dann gilt</label>
+              <select id="condSpeed">
+                <option value="7">7</option>
+                <option value="30" selected>30</option>
+                <option value="50">50</option>
+                <option value="60">60</option>
+                <option value="80">80</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div>
+              <label for="from">von Uhr</label>
+              <input type="number" id="from" min="0" max="23" value="22">
+            </div>
+            <div>
+              <label for="to">bis Uhr</label>
+              <input type="number" id="to" min="0" max="23" value="6">
+            </div>
+          </div>
+          <div style="margin-top:14px">
+            <label>an diesen Tagen</label>
+            <div class="days" id="days"></div>
+          </div>
+          <div class="presets">
+            <button type="button" data-preset="noise">Lärmschutz 22–6</button>
+            <button type="button" data-preset="school">Schulzone Mo–Fr 7–17</button>
+            <button type="button" data-preset="day">Tagsüber 6–18</button>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Aktuelle Zeit</legend>
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:0 0 auto"><span class="clock" id="clock">22:00</span></div>
+          <div>
+            <label for="today">Wochentag</label>
+            <select id="today"></select>
+          </div>
+          <div style="flex:0 0 auto"><button class="btn" id="nowBtn" type="button">Jetzt</button></div>
+        </div>
+        <div style="margin-top:14px">
+          <label for="hour">Stunde ziehen</label>
+          <input type="range" id="hour" min="0" max="23" value="22">
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>GPS-Status</legend>
+        <div class="toggle">
+          <input type="checkbox" id="fix" checked>
+          <label for="fix">Position gefixt</label>
+        </div>
+        <div class="row">
+          <div>
+            <label for="sats">Satelliten <span id="satsOut">11</span></label>
+            <input type="range" id="sats" min="0" max="16" value="11">
+          </div>
+          <div>
+            <label for="minute">Minute</label>
+            <input type="number" id="minute" min="0" max="59" value="14">
+          </div>
+        </div>
+        <div class="row" style="margin-top:13px">
+          <div>
+            <label for="speed">Gefahrenes Tempo <span id="speedOut">25</span> km/h</label>
+            <input type="range" id="speed" min="0" max="200" value="25">
+          </div>
+        </div>
+        <div class="row" style="margin-top:13px">
+          <div>
+            <label for="lat">Breite</label>
+            <input type="number" id="lat" step="0.00001" value="52.51630">
+          </div>
+          <div>
+            <label for="lon">Länge</label>
+            <input type="number" id="lon" step="0.00001" value="13.37770">
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="timeline">
+        <legend>Tagesverlauf</legend>
+        <div class="bars" id="bars"></div>
+        <div class="ticks" id="ticks"></div>
+        <p class="tag">Balken = zeitliches Limit greift (<code>condActive</code> true), grau = Grundlimit. Weiß umrandet: gewählte Stunde.</p>
+      </fieldset>
+    </div>
+  </div>
+</div>
+
+<script>
+const DAYS = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+let weekdayMask = 0x7F;   // Bit0 = Montag, wie im Dateiformat
+let today = 0;
+
+/* --- identisch zu condActive() in speedlimit_grid.h --- */
+function condActive(hour, weekday, from, to, mask){
+  if(!((mask >> weekday) & 1)) return false;
+  if(from < to) return hour >= from && hour < to;
+  return hour >= from || hour < to;      // über Mitternacht
+}
+
+function effectiveLimit(hour, weekday){
+  const base = +document.getElementById('base').value;
+  if(!document.getElementById('hasCond').checked) return base;
+  const from = clampHour(document.getElementById('from').value);
+  const to   = clampHour(document.getElementById('to').value);
+  if(from === to) return base;
+  return condActive(hour, weekday, from, to, weekdayMask)
+    ? +document.getElementById('condSpeed').value
+    : base;
+}
+
+const clampHour = v => Math.min(23, Math.max(0, parseInt(v||0,10)));
+
+
+/* Rand als Fuellbalken: 0 % unten mittig, 30 Grad bis 330 Grad im
+   Uhrzeigersinn. Gezeichnet als gestrichelter Kreis statt als Pfad -
+   dadurch keine Sweep-Flag-Fehler und saubere Kanten. */
+const GAUGE_START = 30, GAUGE_SPAN = 300;
+
+function gaugeArc(cx, cy, r, ring, limit, speed){
+  const rMid = r - ring / 2;
+  const C = 2 * Math.PI * rMid;
+  const bgLen = C * GAUGE_SPAN / 360;
+  // rotate(90) setzt den Startpunkt von 3 Uhr auf 6 Uhr (unten),
+  // die weiteren 30 Grad ruecken ihn ueber die Luecke hinaus.
+  const rot = `rotate(${90 + GAUGE_START} ${cx} ${cy})`;
+  const ring0 = `<circle cx="${cx}" cy="${cy}" r="${rMid}" fill="none"
+      stroke="#232830" stroke-width="${ring}"
+      stroke-dasharray="${bgLen} ${C - bgLen}" transform="${rot}"/>`;
+
+  let fill = '';
+  if(limit > 0 && limit !== 255 && speed > 0){
+    const frac = Math.min(1, speed / limit);
+    const len = bgLen * frac;
+    fill = `<circle cx="${cx}" cy="${cy}" r="${rMid}" fill="none"
+        stroke="var(--sign-red)" stroke-width="${ring}"
+        stroke-dasharray="${len} ${C - len}" transform="${rot}"/>`;
+  }
+  return ring0 + fill;
+}
+
+/* --- Schild zeichnen: entspricht drawSpeedSign() --- */
+function drawSign(limit){
+  const svg = document.getElementById('sign');
+  const cx = 180, cy = 180, r = 180;   // exakt zentriert, fuellt das Display
+  let inner = '';
+
+  if(limit === 255){
+    inner = `
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="#F2F2F0"/>
+      <circle cx="${cx}" cy="${cy}" r="${r-8}" fill="#B9BDC2"/>
+      <circle cx="${cx}" cy="${cy}" r="${r-14}" fill="#F2F2F0"/>
+      ${[-33,-11,11,33].map(o=>
+        `<line x1="${cx-100+o}" y1="${cy+100}" x2="${cx+100+o}" y2="${cy-100}"
+               stroke="#2A2E33" stroke-width="12" stroke-linecap="round"/>`).join('')}`;
+  } else if(limit > 0){
+    // Proportionen nach Zeichen 274: Rand 10 % vom Durchmesser,
+    // Ziffernhoehe 46 % (zweistellig) bzw. 40 % (dreistellig).
+    const D = r * 2, ring = D * 0.10;
+    const capH = D * (limit >= 100 ? 0.40 : 0.46);
+    const size = capH / 0.72;              // Archivo: Versalhoehe ~0.72 em
+    const maxW = D * (limit >= 100 ? 0.60 : 0.46);  // wie DIN Engschrift
+    const spd = +document.getElementById('speed').value;
+    const over = limit !== 255 && spd > limit;
+    inner = `
+      ${gaugeArc(cx, cy, r, ring, limit, spd)}
+      <circle cx="${cx}" cy="${cy}" r="${r-ring}" fill="#F5F5F3"/>
+      <text x="${cx}" y="${cy}" fill="${over ? '#C1121F' : '#15171A'}"
+            font-family="Archivo,sans-serif"
+            font-weight="700" font-size="${size}" text-anchor="middle"
+            dominant-baseline="central" textLength="${maxW}"
+            lengthAdjust="spacingAndGlyphs">${limit}</text>`;
+  } else {
+    inner = `
+      ${gaugeArc(cx, cy, r, r*2*0.10, 0, 0)}
+      <circle cx="${cx}" cy="${cy}" r="${r-r*2*0.10}" fill="#F5F5F3"/>
+      <text x="${cx}" y="${cy}" fill="#5A626D" font-family="Archivo,sans-serif"
+            font-weight="700" font-size="232" text-anchor="middle"
+            dominant-baseline="central">?</text>`;
+  }
+  svg.innerHTML = `<rect width="360" height="360" fill="#000"/>${inner}${statusSvg()}`;
+
+  document.getElementById('status').textContent =
+    limit === 255 ? 'unbegrenzt' : limit > 0 ? limit + ' km/h' : 'unbekannt';
+}
+
+/* --- Statuszeile: gleiche Angaben wie drawStatus() auf dem ESP32 --- */
+function statusSvg(){
+  const sats = +document.getElementById('sats').value;
+  const fix  = document.getElementById('fix').checked;
+  const lat  = parseFloat(document.getElementById('lat').value) || 0;
+  const lon  = parseFloat(document.getElementById('lon').value) || 0;
+  const h    = +document.getElementById('hour').value;
+  const min  = +document.getElementById('minute').value;
+
+  const col1 = fix ? '#4ADE80' : (sats > 0 ? '#FACC15' : '#EF4444');
+  const l1 = `${fix ? 'FIX' : '...'} ${sats}Sat  ${DAYS[today]} `
+           + `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
+  const spd = +document.getElementById('speed').value;
+  const l2 = fix ? `${spd} km/h  ${lat.toFixed(2)} ${lon.toFixed(2)}` : 'kein Fix';
+  const T = (y,txt,fill) => `<text x="180" y="${y}" fill="${fill}"
+      font-family="IBM Plex Mono,monospace" font-size="11.5" text-anchor="middle"
+      style="paint-order:stroke" stroke="#0B0F14" stroke-width="3"
+      stroke-linejoin="round">${txt}</text>`;
+  // Schmales Band, schneidet das Schild nur leicht an
+  // 50 % transparent - das Schild bleibt darunter sichtbar
+  const band = `<rect x="0" y="302" width="360" height="58" fill="#0E1319" fill-opacity="0.55"/>
+                <line x1="0" y1="302" x2="360" y2="302" stroke="#39404B" stroke-width="1" opacity="0.7"/>`;
+  return band + T(318, l1, col1) + T(336, l2, '#9AA4B2');
+}
+
+/* --- 24-Stunden-Streifen --- */
+function drawTimeline(){
+  const bars = document.getElementById('bars');
+  const now = +document.getElementById('hour').value;
+  bars.innerHTML = '';
+  for(let h = 0; h < 24; h++){
+    const lim = effectiveLimit(h, today);
+    const cond = document.getElementById('hasCond').checked &&
+      condActive(h, today, clampHour(document.getElementById('from').value),
+                 clampHour(document.getElementById('to').value), weekdayMask);
+    const d = document.createElement('div');
+    d.className = (cond ? 'on' : 'base') + (h === now ? ' now' : '');
+    d.title = `${String(h).padStart(2,'0')}:00 — ${lim===255?'frei':lim>0?lim+' km/h':'unbekannt'}`;
+    d.innerHTML = `<span>${lim === 255 ? '∞' : lim > 0 ? lim : '–'}</span>`;
+    bars.appendChild(d);
+  }
+}
+
+function render(){
+  const h = +document.getElementById('hour').value;
+  document.getElementById('clock').textContent = String(h).padStart(2,'0') + ':00';
+  document.getElementById('condFields').style.opacity =
+    document.getElementById('hasCond').checked ? '1' : '.4';
+  drawSign(effectiveLimit(h, today));
+  drawTimeline();
+}
+
+/* --- Aufbau --- */
+const daysBox = document.getElementById('days');
+DAYS.forEach((name, i) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = name;
+  b.setAttribute('aria-pressed', 'true');
+  b.onclick = () => {
+    weekdayMask ^= (1 << i);
+    b.setAttribute('aria-pressed', ((weekdayMask >> i) & 1) ? 'true' : 'false');
+    render();
+  };
+  daysBox.appendChild(b);
+});
+
+const todaySel = document.getElementById('today');
+DAYS.forEach((name, i) => {
+  const o = document.createElement('option');
+  o.value = i; o.textContent = name;
+  todaySel.appendChild(o);
+});
+todaySel.onchange = e => { today = +e.target.value; render(); };
+
+const ticks = document.getElementById('ticks');
+for(let h = 0; h < 24; h++){
+  const s = document.createElement('span');
+  s.textContent = h;
+  ticks.appendChild(s);
+}
+
+const PRESETS = {
+  noise:  {base:'100', cond:'60', from:22, to:6,  mask:0x7F},
+  school: {base:'50',  cond:'30', from:7,  to:17, mask:0x1F},
+  day:    {base:'50',  cond:'30', from:6,  to:18, mask:0x7F},
+};
+document.querySelectorAll('[data-preset]').forEach(btn => {
+  btn.onclick = () => {
+    const p = PRESETS[btn.dataset.preset];
+    document.getElementById('base').value = p.base;
+    document.getElementById('condSpeed').value = p.cond;
+    document.getElementById('from').value = p.from;
+    document.getElementById('to').value = p.to;
+    document.getElementById('hasCond').checked = true;
+    weekdayMask = p.mask;
+    [...daysBox.children].forEach((b, i) =>
+      b.setAttribute('aria-pressed', ((weekdayMask >> i) & 1) ? 'true' : 'false'));
+    render();
+  };
+});
+
+document.getElementById('nowBtn').onclick = () => {
+  const d = new Date();
+  document.getElementById('hour').value = d.getHours();
+  document.getElementById('minute').value = d.getMinutes();
+  today = (d.getDay() + 6) % 7;          // JS: 0=So -> unser 0=Mo
+  todaySel.value = today;
+  render();
+};
+
+document.getElementById('sats').addEventListener('input', e => {
+  document.getElementById('satsOut').textContent = e.target.value;
+  if(+e.target.value < 4) document.getElementById('fix').checked = false;
+  render();
+});
+
+document.getElementById('speed').addEventListener('input', e => {
+  document.getElementById('speedOut').textContent = e.target.value;
+  render();
+});
+
+['base','condSpeed','from','to','hour','hasCond','fix','lat','lon','minute'].forEach(id =>
+  document.getElementById(id).addEventListener('input', render));
+
+render();
+</script>
+</body>
+</html>

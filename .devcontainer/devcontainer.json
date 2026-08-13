@@ -1,0 +1,37 @@
+{
+  "name": "Tempolimit-Anzeige (PlatformIO + LVGL)",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+
+  "features": {
+    // Grafischer Desktop im Browser - noetig, damit das SDL-Fenster
+    // des LVGL-Simulators sichtbar wird. Aufruf ueber Port 6080.
+    "ghcr.io/devcontainers/features/desktop-lite:1": {
+      "password": "lvgl",
+      "webPort": "6080",
+      "vncPort": "5901"
+    }
+  },
+
+  "forwardPorts": [6080],
+  "portsAttributes": {
+    "6080": { "label": "Simulator (noVNC)", "onAutoForward": "openBrowser" }
+  },
+
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y libsdl2-dev && pip install -U platformio && pio pkg install",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "platformio.platformio-ide",
+        "ms-vscode.cpptools"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  "remoteEnv": {
+    "DISPLAY": ":1"
+  }
+}

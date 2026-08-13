@@ -1,0 +1,51 @@
+# Baut bei jedem Push die Firmware und legt sie als Download ab.
+# Praktisch, wenn man vom Mac aus flashen will, ohne lokale Toolchain.
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: PlatformIO installieren
+        run: pip install -U platformio
+
+      - name: Firmware bauen
+        run: pio run -e esp32s3
+
+      - name: Ein einziges Flash-Abbild erzeugen
+        run: |
+          pip install esptool
+          python -m esptool --chip esp32s3 merge_bin \
+            -o merged-firmware.bin \
+            --flash_mode dio --flash_size 16MB \
+            0x0     .pio/build/esp32s3/bootloader.bin \
+            0x8000  .pio/build/esp32s3/partitions.bin \
+            0x10000 .pio/build/esp32s3/firmware.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: merged-firmware.bin
+
+  simulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      # Der Simulator laeuft ueber CMake, nicht ueber PlatformIO - es gibt
+      # kein [env:sim] in platformio.ini. include/lv_conf.h liegt bereits
+      # im Repo, "pio run -e esp32s3" zum Nachziehen ist hier nicht noetig.
+      # Nur uebersetzen - ohne Bildschirm laesst sich der Simulator hier
+      # nicht starten, aber Fehler im UI-Code fallen sofort auf.
+      - run: cmake -S sim -B build-sim
+      - run: cmake --build build-sim -j
