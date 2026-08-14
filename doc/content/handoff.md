@@ -97,7 +97,7 @@ während `SpeedLimitGrid` gerade mitten aus ihr liest.
 
 ## Werkzeuge zum Prüfen
 
-**Demo-Route.** 13 Etappen auf echten Straßen, jede mit erwartetem Limit und
+**Demo-Route.** 14 Etappen auf echten Straßen, jede mit erwartetem Limit und
 erwarteter Begründung. Das Log schreibt `ABWEICHUNG`, wenn es auseinanderläuft.
 Erzwingen über den Schalter an GPIO5 oder:
 

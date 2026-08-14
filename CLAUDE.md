@@ -20,6 +20,28 @@ Wer etwas Grundsaetzliches aendert oder eine Sackgasse ausmisst, schreibt einen
 Eintrag in `history.md` — die Messreihen dort haben mehrfach verhindert, dass
 dieselbe Idee ein zweites Mal geprueft wird.
 
+**`README.md` ist die bewusste Ausnahme von "alles auf Deutsch"** — sie ist
+die englischsprachige Einstiegsdokumentation fuer neue Nutzer: Hardware,
+Verkabelung, alle Features, Bauen/Flashen, der komplette Kartendaten-
+Workflow (woher die Daten kommen, wie man sie erzeugt und aufs Geraet
+bekommt — per PC oder per WLAN-Access-Point) und eine vollstaendige
+Konfigurationsreferenz zu `src/config.h`, gruppiert wie die Datei selbst.
+
+**Sie muss bei jeder relevanten Aenderung mitgezogen werden** — sonst
+veraltet genau die Datei, die ein neuer Nutzer zuerst liest. Betroffen sind:
+
+- Hardware oder Verkabelung (neue/andere Pins, anderes Modul)
+- der Bau-/Flash-Ablauf (neue Build-Flags, neue Targets, neue Abhaengigkeiten)
+- der Kartendaten-Workflow (`tools/maps.py`, `tools/osm_to_grid.py`, das
+  WLAN-Update in `webupdate.h`/`.cpp`)
+- eine neue, entfernte oder umbenannte Konstante in `src/config.h`, oder eine
+  Aenderung, die ihren Standardwert oder ihre Bedeutung veraendert
+- ein neues sichtbares Feature (Anzeigemodus, Schalterfunktion, o.ae.)
+
+Die Konfigurationstabelle in der README ist eine **Landkarte, kein Ersatz**
+fuer die ausfuehrlichen Begruendungen in `config.h` selbst — dort steht das
+"warum", in der README nur das "was und wie einstellen".
+
 ## Hardware
 
 - ESP32-S3-DevKitC-1, Modul N16R8 (16 MB Flash, 8 MB Octal-PSRAM)
@@ -617,9 +639,11 @@ Die Einstellung liegt im gepufferten RAM des Moduls und geht ohne Batterie
 beim Trennen der Versorgung verloren; sie wird deshalb bei **jedem**
 erfolgreichen Sync neu gesendet, nicht einmalig beim ersten Start.
 
-`UI_UPDATE_MS` (200 ms) passt dazu — bei den frueheren 500 ms waeren drei von
-fuenf Positionen ungenutzt verfallen. Das Serial-Log bleibt per
-`LOG_INTERVAL_MS` bei 1 Hz, sonst ist der Mitschnitt unlesbar.
+`UI_UPDATE_MS` (60 ms, siehe "Stellschrauben" oben) liegt bewusst deutlich
+unter den 200 ms eines 5-Hz-Fixes - zwischen den Fixes wird koppelnavigiert,
+bei den frueheren 500 ms waeren sonst drei von fuenf Positionen ungenutzt
+verfallen. Das Serial-Log bleibt per `LOG_INTERVAL_MS` bei 1 Hz, sonst ist
+der Mitschnitt unlesbar.
 
 Alle 5 s kommt eine Statistikzeile `Bytes= ok= (Saetze/s) Pruefsummenfehler=
 Sat=`. Die Satzrate zeigt direkt, ob 5 Hz greift: **10/s** bei RMC+GGA, vorher
@@ -648,9 +672,11 @@ Anzeige — am Schreibtisch bekommt der NEO-6M ohnehin keinen Fix. Jede Etappe
 traegt ihr erwartetes Limit; das Serial-Log stellt Ist und Soll nebeneinander
 und schreibt `ABWEICHUNG`, wenn es auseinanderlaeuft.
 
-Etappen: 30 (zu schnell), 50, 60, 80, 100, 120 (zu schnell), 255 = `frei`,
-sowie ein Punkt ausserhalb des Extrakts fuer `?`. Ein Durchlauf dauert rund
-96 s (`DEMO_LEG_MS` = 12 s je Etappe).
+Etappen: Tempo-30 (zu schnell), Zone, Kinder/Schule, Spielstrasse,
+Fahrradstrasse, zeitlich begrenztes Limit, 50, 60, 80, 100, 120 (zu
+schnell), 255 = `frei`, eine zweite Region (Brandenburg) und ein Punkt
+ausserhalb aller Extrakte fuer `?` - 14 Etappen. Ein Durchlauf dauert rund
+168 s (`DEMO_LEG_MS` = 12 s je Etappe).
 
 Sobald GPS einen Fix hat, laeuft die Demo nicht mehr an. Erzwingen geht ueber
 den Schalter an `DEMO_PIN` oder, fuer automatisierte Laeufe, ueber:
