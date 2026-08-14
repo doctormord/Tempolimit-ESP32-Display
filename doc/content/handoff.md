@@ -8,49 +8,40 @@ Verlauf in `history.md`.
 
 ## Stand
 
-Das Gerät funktioniert vollständig: Display, GPS mit 5 Hz, Karte aus LittleFS,
-Map-Matching, zwei Anzeigemodi, zwei Schalter. Eine Testfahrt mit dem Fahrrad
-ist gemacht.
+Das Gerät funktioniert vollständig: Display, GPS mit 5 Hz, Karte aus
+LittleFS, Map-Matching, zwei Anzeigemodi, zwei Schalter, Kartenupdate per
+WLAN-Access-Point (`src/webupdate.h`/`.cpp`, siehe `CLAUDE.md`). Zwei
+Testfahrten mit dem Fahrrad sind gemacht. Firmware und Kartendaten sind auf
+dem aktuellen Stand geflasht (2026-08-14, `pio run -t upload` und
+`-t uploadfs` über den USB-UART-Port), der Boot ist per Serial-Log
+bestätigt: `[FS] LittleFS: 2830336 von 13500416 Byte belegt`,
+`[Grid] brandenburg 222x178 Zellen, 13702 belegt, Index 107 KiB in 37 ms`,
+`[Grid] 1 Region(en): brandenburg`, `[Update] AP "Tempolimit-Setup"
+gestartet, http://192.168.4.1/`.
 
-**Nicht auf Hardware geprüft** sind die drei Korrekturen aus dieser Testfahrt —
-das Board war beim Einbauen nicht angeschlossen. Sie bauen sauber und der
-Simulator läuft, mehr nicht:
-
-1. Begründung wird unterdrückt, wenn eine zeitliche Bedingung existiert und
-   gerade nicht greift (`speedlimit_grid.h`, `scanCell`)
-2. Überschreitung löst keine Blende mehr aus (`main.cpp`, `blf_*`)
-3. `SWITCH_AHEAD_MS` 600 → 300
-
-Das ist der erste Punkt, den die nächste Sitzung prüfen sollte.
-
-**Kartenupdate per Access Point:** startet auf echter Hardware sauber
-(Serial-Log: `[Update] AP "Tempolimit-Setup" gestartet,
-http://192.168.4.1/`). Was das noch nicht abdeckt: eine echte
-Browser-Verbindung, ein echter Upload oder eine echte Neustart-Übernahme.
-Offene Fragen dazu in `backlog.md`, Punkt 1a.
-
-**Aus der zweiten Testfahrt bestätigt und an der Quelle behoben:** nach dem
+**Aus der zweiten Testfahrt gefunden und an der Quelle behoben:** nach dem
 Abbiegen aus einer Tempo-30-Zone blieb das Limit auf 30 stehen. Ursache war
-kein "die Hysterese hält halt lange fest" (das war ein erster, vom Nutzer
-zu Recht angezweifelter Erklärungsversuch), sondern ein echter Fehler in
-`tools/osm_to_grid.py`: `chain()` verschweißte an Kreuzungen innerhalb von
-Tempo-30-Zonen unabhängige Straßen zu einer Kette, weil alle Straßen einer
-Zone dieselbe Kennzeichnung tragen und nur Ende-trifft-Anfang plus gleiche
-Kennzeichnung geprüft wurde, nicht die Richtung. Fix: `chain()` verkettet
-nur noch bei ≤60° Richtungsänderung an der Naht; `brandenburg.msg` neu
-erzeugt und ersetzt. Details und Zahlen in `history.md` 2026-08-14. Die
-4-Sekunden-Hysterese-Grenze (`MATCH_HYSTERESIS_MAX_MS`) bleibt zusätzlich
-als Sicherheitsnetz.
+ein echter Fehler in `tools/osm_to_grid.py`: `chain()` verschweißte an
+Kreuzungen innerhalb von Tempo-30-Zonen unabhängige Straßen zu einer Kette,
+weil alle Straßen einer Zone dieselbe Kennzeichnung tragen und nur
+Ende-trifft-Anfang plus gleiche Kennzeichnung geprüft wurde, nicht die
+Richtung. Fix: `chain()` verkettet nur noch bei ≤60° Richtungsänderung an
+der Naht; `brandenburg.msg` neu erzeugt und ersetzt. Als Sicherheitsnetz
+zusätzlich: die Hysterese im Lookup ist jetzt auf `MATCH_HYSTERESIS_MAX_MS`
+(4 s) begrenzt. Details und Zahlen in `history.md`, 2026-08-14.
 
-**Firmware und neue Karte sind geflasht** (2026-08-14, `pio run -t upload`
-und `-t uploadfs` über den USB-UART-Port). Serial-Log bestätigt einen
-sauberen Boot: `[FS] LittleFS: 2830336 von 13500416 Byte belegt` (die neue,
-größere `brandenburg.msg`), `[Grid] brandenburg 222x178 Zellen, 13702
-belegt, Index 107 KiB in 37 ms`, `[Grid] 1 Region(en): brandenburg`, dazu
-der AP-Start (siehe oben). GPS fand die Baudrate (9600 auf GPIO18), aber
-noch kein Fix (Test lief ohne Antennensicht). **Noch nicht geprüft: die
-eigentliche Testfahrt an der Kreuzung selbst** (52.460744, 13.521135) mit
-echtem GPS-Fix draußen — das ist der naheliegendste nächste Schritt.
+**Noch nicht auf Hardware geprüft** — das Gerät bootet sauber mit dem neuen
+Code und der neuen Karte, aber:
+
+- die eigentliche Testfahrt an der Kreuzung (52.460744, 13.521135) mit
+  echtem GPS-Fix draußen — behebt der `chain()`-Fix das gemeldete Problem
+  wirklich?
+- die drei Korrekturen der *ersten* Testfahrt (Begründung-Unterdrückung bei
+  inaktiver Zeitbedingung, keine Blende bei Überschreitung,
+  `SWITCH_AHEAD_MS` 600→300) liefen bei der zweiten Fahrt mit, ohne
+  gemeldete Probleme — aber nicht einzeln bestätigt
+- eine echte Browser-Verbindung zum Access Point, ein echter Upload, eine
+  echte Neustart-Übernahme (offene Einzelfragen in `backlog.md`, Punkt 1a)
 
 ## Wo was liegt
 

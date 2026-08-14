@@ -582,8 +582,12 @@ Beim Lookup werden 3x3 Zellen geprueft (die Strasse kann knapp jenseits der
 Zellgrenze liegen), Kandidaten ueber Punkt-Segment-Abstand bewertet, per
 GPS-Kurs gefiltert (`COURSE_TOLERANCE_DEG`, Gegenrichtung erlaubt) und mit
 Hysterese (`MATCH_HYSTERESIS`) stabilisiert, damit die Anzeige an Kreuzungen
-nicht flackert. Zeitliche Limits (`maxspeed:conditional`) stecken als 4 Byte
-im Segment und ersetzen das Grundlimit, wenn `condActive()` zutrifft.
+nicht flackert - zusaetzlich zeitlich auf `MATCH_HYSTERESIS_MAX_MS` (4 s)
+begrenzt, seit eine echte Testfahrt zeigte, dass ein fehlerhaft verkettetes
+Kartensegment die Hysterese sonst ueber hunderte Meter am alten Limit
+festhalten konnte (siehe `doc/content/history.md`, 2026-08-14). Zeitliche
+Limits (`maxspeed:conditional`) stecken als 4 Byte im Segment und ersetzen
+das Grundlimit, wenn `condActive()` zutrifft.
 
 ## Karte aus LittleFS
 
@@ -616,6 +620,61 @@ belegten Zellen aber gleich gross, die Ladezeit sollte sich daher kaum
 aendern): Brandenburg (enthaelt Berlin) belegte 2.760.704 von 13.500.416
 Byte, sein Index von 107 KiB war in **38 ms** geladen. Unter MSG1 waren
 allein fuer Berlin 2,24 MiB Index und 741 ms faellig.
+
+## Kartenupdate per Access Point
+
+`src/webupdate.h`/`.cpp` (Backlog Punkt 1a in `doc/content/backlog.md`):
+Kartendaten lassen sich auch ohne PC und Toolchain aktualisieren. Das Geraet
+spannt beim Start - und erneut, wenn `DEMO_PIN` 10 s gegen GND gehalten wird
+(`AP_HOLD_TRIGGER_MS`) - einen offenen Access Point auf (`AP_SSID`, Standard
+`Tempolimit-Setup`) und stellt unter `http://192.168.4.1/` eine kleine
+Weboberflaeche bereit: installierte Regionen mit Groesse, freier Speicher,
+Upload-Formular fuer fertige `.msg`-Dateien, Loeschen einzelner Regionen.
+Die Aufbereitung (PBF -> msg) bleibt auf dem PC bei `tools/maps.py` /
+`tools/osm_to_grid.py` - die Weboberflaeche nimmt nur die fertige Datei
+entgegen.
+
+**Offener AP ohne Passwort ist eine bewusste Entscheidung.** Fuer ein Geraet
+im Auto vertretbar, und ein WPA2-Passwort muesste ohnehin am Geraet selbst
+nachzulesen sein.
+
+**Aenderungen wirken erst nach einem Neustart.** Upload und Loeschen legen
+nur Dateien in `PENDING_DIR` (`/maps_pending`) ab, nicht direkt in
+`GRID_DIR` (`/maps`) - waehrend das Geraet laeuft, haelt `SpeedLimitGrid`
+unter Umstaenden gerade ein offenes File-Handle auf genau die Regionsdatei,
+die ersetzt oder geloescht werden soll, und ein laufender Lookup wuerde dann
+mitten im Schreiben lesen. `applyPendingMapChanges()` wendet die
+vorgemerkten Aenderungen deshalb ganz am Anfang des naechsten `setup()` an,
+bevor `grid.begin()` auch nur eine Datei geoeffnet hat - neue/ersetzte
+Regionen liegen als `<name>.msg` in `PENDING_DIR`, Loeschungen als leere
+`<name>.msg.del`-Marker.
+
+**Der AP schaltet sich selbst ab**, um im geparkten Fahrzeug keinen Strom zu
+verbrauchen: ohne Verbindung nach `AP_IDLE_TIMEOUT_MS` (5 min). Verbindet
+sich jemand, wird dieselbe Frist bei jeder Pruefung neu gestartet, solange
+mindestens eine Station verbunden ist - der AP bleibt also offen, solange
+die Sitzung laeuft, und danach noch einmal so lange als Kulanz. Eine
+einzige Konstante fuer beide Faelle, weil es dieselbe Abwaegung ist.
+
+**Kein Captive-Portal-Redirect** (DNS auf 192.168.4.1 umbiegen) - bewusst
+weggelassen, um keine ungeprueft eingebundene `DNSServer`-Abhaengigkeit
+einzuziehen. Die Adresse muss von Hand eingegeben werden.
+
+**Sackgasse unterwegs, mit Zahlen:** WiFi + `WebServer` allein kosteten rund
+634 KiB Flash. Mit der bisherigen Partitionstabelle (zwei App-Slots a
+1,5 MiB fuer OTA, das im Projekt nie genutzt wird) waere das bei 95,1 %
+eines Slots gelandet - keine Reserve mehr fuer irgendetwas. Behoben nicht
+durch Sparen am Code, sondern am Partitionslayout: ein einziger
+`factory`-Slot statt `app0`/`app1` + `otadata` verdoppelt den nutzbaren
+Platz auf 3 MiB, ohne die `spiffs`-Partition anzufassen (Offset und Groesse
+blieben exakt gleich - wer schon eine Karte hochgeladen hat, muss nach dem
+Umstieg nicht neu `uploadfs` laufen lassen, nur die Firmware neu flashen).
+Details in `doc/content/history.md`, 2026-08-14.
+
+Auf echter Hardware bestaetigt (2026-08-14, Serial-Log):
+`[Update] AP "Tempolimit-Setup" gestartet, http://192.168.4.1/`. Eine echte
+Browser-Verbindung mit Upload und Neustart-Uebernahme steht noch aus, siehe
+`doc/content/backlog.md`, Punkt 1a.
 
 ## GPS
 

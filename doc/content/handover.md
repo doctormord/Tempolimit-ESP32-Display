@@ -34,7 +34,7 @@ Schalter, jeweils gegen Masse (interne Pullups sind aktiv):
 | Pin | offen | geschlossen |
 |---|---|---|
 | GPIO21 | Tempolimit-Anzeige | Tacho: Mitte zeigt das gefahrene Tempo |
-| GPIO5 | normal | erzwingt die simulierte Fahrt |
+| GPIO5 | normal | erzwingt die simulierte Fahrt; 10 s gehalten startet zusätzlich den WLAN-Access-Point neu, falls er schon abgeschaltet ist |
 
 Gesperrt: GPIO26–37 (Flash/PSRAM), GPIO19/20 (USB), GPIO43/44 (UART-Brücke),
 GPIO0/3/45/46 (Strapping).
@@ -63,6 +63,26 @@ Lädt von Geofabrik, bereitet auf, zeigt die Belegung, lädt hoch. Braucht
 Achtung: Geofabriks Brandenburg **enthält Berlin**, Niedersachsen enthält
 Bremen. Beide zu laden verschwendet Platz und halbiert die Cache-Trefferquote.
 Das Werkzeug warnt.
+
+## Karten per WLAN aktualisieren (ohne Rechner)
+
+Für unterwegs, ohne Laptop: das Gerät spannt beim Start einen offenen
+WLAN-Access-Point auf.
+
+1. Mit dem Handy oder Laptop mit dem Netz **„Tempolimit-Setup"** verbinden
+   (offen, kein Passwort).
+2. Im Browser **`http://192.168.4.1/`** öffnen (öffnet sich nicht von
+   selbst — die Adresse von Hand eingeben).
+3. Zeigt installierte Regionen mit Größe, freien Speicher, ein
+   Upload-Formular für eine fertige `.msg`-Datei (die kommt weiterhin aus
+   `tools/maps.py` auf einem Rechner — hier wird nur die fertige Datei
+   entgegengenommen) und einen Löschen-Link je Region.
+4. **Änderungen wirken erst nach einem Neustart** — dafür gibt es auf der
+   Seite einen eigenen Knopf.
+
+Ohne Verbindung schaltet der AP nach 5 Minuten von selbst ab, um im
+geparkten Auto keinen Strom zu verbrauchen. Wieder einschalten: den
+Schalter an GPIO5 10 Sekunden gegen Masse halten.
 
 ## Was die Anzeige zeigt
 

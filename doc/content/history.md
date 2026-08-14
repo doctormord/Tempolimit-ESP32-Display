@@ -420,3 +420,37 @@ Verbindung.
 
 Noch offen: eine echte Testfahrt an der Kreuzung (52.460744, 13.521135) mit
 Fix draussen, und eine echte Browser-Verbindung zum AP mit Upload.
+
+## 2026-08-14 — Aufgeraeumt: veraltete Doku, kaputter CI-Job, alte Kartendaten
+
+Reine Aufraeumarbeit, kein Verhaltensaenderung:
+
+- `README.md` und `TODO.md` beschrieben noch den Stand von vor der
+  LittleFS-Umstellung (Projektordner-von-Hand-anlegen, `pio run -e sim`).
+  `README.md` seitdem komplett neu geschrieben (siehe Eintrag weiter unten),
+  `TODO.md` auf einen Verweis zu `backlog.md` eingedampft.
+- Der Job `simulator` in `.github/workflows/build.yml` rief `pio run -e sim`
+  auf - das Env gibt es nicht, der Job schlug immer fehl. Umgestellt auf den
+  echten Weg ueber CMake, lokal nachgebaut und gruen.
+- `tools/out-berlin/` und `tools/out-germany/` waren Daten im alten
+  MSG1-Format, von nichts mehr gelesen. 112 MiB geloescht.
+
+## 2026-08-14 — Entschieden: Datenformat nicht weiter verkleinern
+
+Zwei Wege prophylaktisch durchgerechnet, beide **nicht umgesetzt**:
+
+- **Bitmap-Index statt sparse Liste.** Bei dicht belegten Rastern (ganz
+  Deutschland, 44,7 % belegt) 0,71 statt 1,33 MiB. Bei Regionsdateien
+  bedeutungslos, weil der Index dort ohnehin klein ist (Brandenburg: 107 KiB
+  von 2,68 MiB Gesamtgroesse) - der Hebel greift nur, wenn man doch wieder
+  einen Index ueber ganz Deutschland vorhaelt, und genau das hat MSG2
+  bewusst abgeschafft (eigene Bounding-Box je Region).
+- **Innerorts-Regelfall (Tempo 50) folgern statt speichern.** 45,3 % aller
+  Stuetzpunkte gehoeren zu Tempo-50-Strassen - theoretisch Sparpotential,
+  wenn man sie implizit annimmt statt zu speichern. Braeuchte dafuer aber
+  eine eigene Ortslagen-Ebene und tauscht Genauigkeit ausgerechnet dort ein,
+  wo sie am wichtigsten ist (Ortsdurchfahrten, wo Limits am haeufigsten
+  wechseln). **Nicht empfohlen** - das Risiko falscher Grundannahmen wiegt
+  schwerer als der Platzgewinn.
+
+Format bleibt MSG2 wie es ist. Nicht erneut pruefen, ohne einen neuen Grund.
