@@ -342,3 +342,58 @@ Sauber gebaut (Firmware, +32 Byte Flash). **Nicht auf Hardware geprüft** -
 die 4 s sind eine erste, plausible Schätzung, keine Messung. Nächste
 Testfahrt sollte gezielt an derselben Kreuzung gegenprüfen, ob 4 s reichen,
 ohne an echten Kreuzungen neues Flackern einzuführen.
+
+## 2026-08-14 — Korrektur: eigentliche Ursache war chain(), nicht die Hysterese
+
+Der Nutzer widersprach zu Recht dem vorigen Eintrag: "das darf nicht
+passieren, ein Reset hat es behoben - also muss bei uns was falsch laufen."
+Und: "wir nutzen Kurs, an dieser Stelle sind die 30er immer Kreuzungen, keine
+parallelen Straßen." Beides zusammen war der richtige Hinweis, dass die
+4-Sekunden-Hysterese-Grenze vom letzten Eintrag nur ein Symptom behandelt
+hätte, nicht die Ursache.
+
+**Nachgeschaut statt geglaubt:** ein Skript entlang der tatsächlich
+befahrenen 50er-Straße gebaut (mehrere aneinandergehängte `.msg`-Ketten
+verfolgt, ~1 km) und geprüft, wie oft eine Tempo-30-Kette in Konkurrenz-
+Reichweite kommt - das zeigte ein durchgehend verzahntes Bild, aber noch
+keine Ursache.
+
+**Der eigentliche Fehler steckt in `chain()` in `tools/osm_to_grid.py`:**
+die Funktion hängt zwei Teilstücke aneinander, wenn Ende und Anfang
+zusammentreffen UND Tempo/Bedingung/Begründung übereinstimmen - ohne zu
+prüfen, ob die Richtung an der Naht überhaupt zusammenpasst. In einer
+Tempo-30-Zone tragen praktisch **alle** Straßen dieselbe Kennzeichnung
+(`30, Zone`), und an jeder Kreuzung innerhalb der Zone treffen zwei
+komplett unabhängige Straßen an einem gemeinsamen OSM-Knoten aufeinander.
+`chain()` verschweißte sie trotzdem zu einer einzigen, oft zickzackenden
+Kette quer durch mehrere echte Straßen.
+
+Nachgemessen an den Ketten um die Kreuzung aus dem letzten Eintrag: von 85
+Zonen-Ketten mit ≥4 Punkten hatten **26 einen Richtungssprung über 60 Grad**
+zwischen zwei benachbarten Segmenten - einige über 90, eine sogar 150 Grad.
+Kein echter Straßenverlauf macht das, das sind zusammengeschweißte
+Kreuzungen. Genau das erklärt, warum der Kurs-Filter (`COURSE_TOLERANCE_DEG`)
+nicht rettet: er prüft nur, ob IRGENDEIN Segment der (zu langen) Kette zur
+Fahrtrichtung passt - bei einer durch mehrere echte Straßen gezickzackten
+Kette trifft das öfter zufällig zu, als man denkt, unabhängig davon, welche
+der verschweißten Straßen tatsächlich in Reichweite liegt.
+
+**Fix an der Quelle:** `chain()` hängt zwei Teilstücke nur noch zusammen,
+wenn die Richtungsänderung an der Naht höchstens `CHAIN_MAX_TURN_DEG`
+(60°) beträgt; bei mehreren Kandidaten gewinnt der mit der kleinsten
+Abweichung. `brandenburg.msg` neu erzeugt: 157.251 → 164.693 Ketten
+(+4,7 %), 2,61 → 2,68 MiB - ein kleiner, erwarteter Preis für weniger
+Verschweißung. Um dieselbe Kreuzung: die Ketten mit Richtungssprung >60°
+gingen von 26 auf 3 zurück (die verbliebenen 3 sind vermutlich echte
+Kurven innerhalb einer einzelnen OSM-Way, keine Kreuzungs-Verschweißung
+mehr). Alle zehn Demo-Wegpunkte (`DEMO[]` in `main.cpp`) treffen mit der
+neu erzeugten Karte weiterhin ihr erwartetes Limit - keine Regression.
+
+Die 4-Sekunden-Hysterese-Grenze aus dem vorigen Eintrag bleibt drin, ist
+aber vom Haupt- zum Sicherheitsnetz herabgestuft: sie hilft, falls
+irgendwo anders im Land noch eine vergleichbare Verschweißung übersehen
+wurde oder eine wirklich parallele Straße lange in Reichweite bleibt -
+verhindert aber nicht mehr das eigentliche, jetzt behobene Problem.
+
+**Nicht auf Hardware geprüft** - die neue `brandenburg.msg` muss noch per
+`uploadfs` auf ein Gerät und an derselben Kreuzung nachgefahren werden.

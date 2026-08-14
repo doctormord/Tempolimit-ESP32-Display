@@ -330,10 +330,47 @@ class WayHandler(osmium.SimpleHandler):
             self.n_conditional += 1
 
 
-def chain(segments):
+# Ab welcher Richtungsaenderung zwei Teilstuecke NICHT mehr verkettet werden,
+# obwohl Ende und Anfang sowie Tempo/Bedingung/Begruendung uebereinstimmen.
+# Ohne dieses Limit verkettete chain() an jeder Kreuzung innerhalb einer
+# Tempo-30-Zone zwei voellig unabhaengige Strassen zu einer einzigen Kette,
+# nur weil sie sich einen Knotenpunkt teilen und beide "30, Zone" tragen -
+# in einer Zone haben praktisch ALLE Strassen dieselbe Kennzeichnung. Der
+# Kurs-Filter im Lookup rettet das nicht: er prueft nur, ob IRGENDEIN
+# Segment der (dann viel zu langen) Kette zur Fahrtrichtung passt, und bei
+# einer durch mehrere echte Strassen gezickzackten Kette trifft das eher
+# zufaellig auf ein Segment zu, das mit der tatsaechlich befahrenen Strasse
+# nichts zu tun hat. Gefunden bei einer echten Testfahrt (siehe history.md):
+# das Limit blieb nach dem Abbiegen aus einer Zone auf eine unbeteiligte
+# 50er-Strasse laenger auf 30 haengen, weil eine so zusammengeschweisste
+# Zonen-Kette zufaellig ein paralleles Teilstueck enthielt.
+#
+# 60 Grad laesst echte, sanft geschwungene Strassenverlaeufe zusammen, hebt
+# aber echte Abbiegungen/Kreuzungen zuverlaessig ab - die im echten Fall
+# gefundenen Fehlverkettungen lagen bei 87-150 Grad.
+CHAIN_MAX_TURN_DEG = 60.0
+
+
+def _bearing(a, b, lon_scale):
+    """Peilung in Grad (0 = Nord), a/b als (lat_e6, lon_e6)."""
+    dlat = b[0] - a[0]
+    dlon = (b[1] - a[1]) * lon_scale
+    if dlat == 0 and dlon == 0:
+        return None
+    return math.degrees(math.atan2(dlon, dlat)) % 360.0
+
+
+def _bearing_diff(a, b):
+    d = abs(a - b) % 360.0
+    return min(d, 360.0 - d)
+
+
+def chain(segments, lon_scale):
     """Teilstücke mit gleichem Tempo aneinanderhängen, wo Ende auf Anfang
-    trifft. Das ist der eigentliche Hebel: erst dadurch entstehen lange
-    Linienzüge, an denen die Vereinfachung überhaupt etwas findet."""
+    trifft UND die Richtung an der Naht nicht zu stark springt (siehe
+    CHAIN_MAX_TURN_DEG). Das Aneinanderhängen selbst ist der eigentliche
+    Hebel: erst dadurch entstehen lange Linienzüge, an denen die
+    Vereinfachung überhaupt etwas findet."""
     starts = defaultdict(list)
     for i, (sp, cd, wy, p) in enumerate(segments):
         starts[(sp, cd, wy, p[0])].append(i)
@@ -344,11 +381,24 @@ def chain(segments):
         used.add(i)
         pts = list(p)
         while True:
-            nxt = [j for j in starts.get((sp, cd, wy, pts[-1]), []) if j not in used]
-            if not nxt:
+            candidates = [j for j in starts.get((sp, cd, wy, pts[-1]), []) if j not in used]
+            if not candidates:
                 break
-            used.add(nxt[0])
-            pts.extend(segments[nxt[0]][3][1:])
+            cur_bear = _bearing(pts[-2], pts[-1], lon_scale)
+            best, best_diff = None, None
+            for j in candidates:
+                cand_pts = segments[j][3]
+                cand_bear = _bearing(cand_pts[0], cand_pts[1], lon_scale)
+                # Ein nulllanges Segment (identische Punkte) hat keine
+                # eigene Richtung und blockiert das Verketten nicht.
+                diff = (0.0 if cur_bear is None or cand_bear is None
+                        else _bearing_diff(cur_bear, cand_bear))
+                if best_diff is None or diff < best_diff:
+                    best, best_diff = j, diff
+            if best is None or best_diff > CHAIN_MAX_TURN_DEG:
+                break
+            used.add(best)
+            pts.extend(segments[best][3][1:])
         out.append((sp, cd, wy, pts))
     return out
 
@@ -380,7 +430,7 @@ def write_region(handler, outdir, name):
         base_lat = lat_min + rr * CELL_LAT_E6
         base_lon = lon_min + cc * CELL_LON_E6
         buf = bytearray()
-        chains = chain(segs)
+        chains = chain(segs, cos_lat)
         varint(buf, len(chains))
         for speed, cond, why, pts in chains:
             tol = TOL_M[klasse(speed)] / M_PER_ULAT

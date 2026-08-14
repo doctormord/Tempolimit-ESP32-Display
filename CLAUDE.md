@@ -160,14 +160,15 @@ Strassen —, ausserdem `frei`, `?` und der Tachomodus.
 Traegt eine Kette eine zeitliche Bedingung und greift diese nicht, faellt die
 Begruendung weg (`scanCell` in `speedlimit_grid.h`).
 
-Gemessen an Brandenburg (157.251 Ketten):
+Gemessen an Brandenburg (164.693 Ketten, nach der `chain()`-Korrektur vom
+2026-08-14 - siehe `doc/content/history.md`, davor 157.251):
 
 | | Anteil |
 |---|---|
-| ohne Angabe | 72,1 % |
-| Zone | 17,1 % |
+| ohne Angabe | 72,0 % |
+| Zone | 17,4 % |
 | Spielstrasse | 4,3 % |
-| Einzelschild | 4,2 % |
+| Einzelschild | 4,1 % |
 | zeitlich | 1,4 % |
 | Kinder | 0,5 % |
 | Fahrradstrasse | 0,4 % |
@@ -587,9 +588,12 @@ python3 tools/maps.py            # Regionen waehlen, laden, aufbereiten, hochlad
 - Deutschland passt auch als MSG2 nicht ins Flash (~42 MiB). LittleFS bleibt
   die Regional-Loesung, fuer den Vollausbau wird SD gebraucht.
 
-Gemessen auf dem Geraet: Brandenburg (2,61 MiB, enthaelt Berlin) belegt
-2.760.704 von 13.500.416 Byte, sein Index von 107 KiB ist in **38 ms** geladen.
-Unter MSG1 waren allein fuer Berlin 2,24 MiB Index und 741 ms faellig.
+Gemessen auf dem Geraet (Stand vor der `chain()`-Korrektur vom 2026-08-14,
+Datei seitdem 2,68 statt 2,61 MiB - der Index ist mit unveraendert 13.702
+belegten Zellen aber gleich gross, die Ladezeit sollte sich daher kaum
+aendern): Brandenburg (enthaelt Berlin) belegte 2.760.704 von 13.500.416
+Byte, sein Index von 107 KiB war in **38 ms** geladen. Unter MSG1 waren
+allein fuer Berlin 2,24 MiB Index und 741 ms faellig.
 
 ## GPS
 

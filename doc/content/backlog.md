@@ -76,19 +76,31 @@ Hardware geprüft** (Board war beim Fixen nicht angeschlossen):
 
 **Erste echte Rückmeldung von der Straße (2026-08-14):** rechts aus einer
 Tempo-30-Zone auf eine unbeteiligte 50er-Straße abgebogen (Kreuzung
-52.460744, 13.521135), Anzeige blieb ~400 m auf 30 statt sofort auf 50 zu
-wechseln — Neustart an derselben Stelle korrigierte es sofort. Mit den
-Kartendaten gegengerechnet: die Kreuzung liegt in einem dichten
-Zonen-Gebiet, eine lange parallel verlaufende Zonen-Kette blieb die ganze
-Strecke im Suchradius. Genau das war hier schon als Verdacht notiert
-("`MATCH_HYSTERESIS` auf parallelen Straßen") — jetzt mit echten Daten
-bestätigt. Fix: Hysterese zusätzlich zeitlich auf `MATCH_HYSTERESIS_MAX_MS`
-(4 s) begrenzt, siehe `history.md`. **Nicht auf Hardware geprüft** — die
-nächste Testfahrt sollte gezielt an dieser Kreuzung gegenprüfen, ob 4 s
-reichen, ohne an echten Kreuzungen neues Flackern einzuführen. Falls die
-Zonen-Kette sehr viel länger als ~4 s Fahrzeit ist (schnelles Fahren auf der
-Straße), könnte selbst 4 s noch zu großzügig oder zu knapp sein — das zeigt
-erst die nächste Fahrt.
+52.460744, 13.521135), Anzeige blieb auf 30 hängen — ein Reset korrigierte
+es sofort. Erster Erklärungsversuch (Hysterese hält zu lange fest) war laut
+Nutzer nicht überzeugend, zu Recht: ein Reset darf so etwas nicht beheben
+müssen, und an dieser Kreuzung sind die Tempo-30-Straßen immer Kreuzungen,
+keine parallelen Straßen — der Kurs-Filter hätte sie eigentlich ausschließen
+müssen.
+
+**Tatsächliche Ursache gefunden und behoben, siehe `history.md`
+2026-08-14:** `chain()` in `tools/osm_to_grid.py` verschweißte an
+Kreuzungen innerhalb von Tempo-30-Zonen unabhängige Straßen zu einer
+einzigen, oft zickzackenden Kette, weil alle Straßen einer Zone dieselbe
+Kennzeichnung tragen und `chain()` nur auf Ende-trifft-Anfang plus gleiche
+Kennzeichnung prüfte, nicht auf die Richtung. Der Kurs-Filter konnte das
+nicht auffangen, weil er pro Segment prüft und die verschweißte Kette
+irgendwo ein zufällig passendes Segment enthielt. Fix: `chain()` verkettet
+nur noch, wenn die Richtungsänderung an der Naht ≤60° bleibt. Um diese
+Kreuzung sank die Zahl der Ketten mit >60°-Sprung von 26 auf 3.
+`brandenburg.msg` neu erzeugt und im Repo ersetzt (157.251 → 164.693
+Ketten, 2,61 → 2,68 MiB). Alle Demo-Wegpunkte weiterhin ohne Abweichung.
+
+Die 4-Sekunden-Hysterese-Grenze (`MATCH_HYSTERESIS_MAX_MS`) bleibt als
+Sicherheitsnetz drin, ist aber nicht mehr die Haupterklärung.
+
+**Nicht auf Hardware geprüft** — die neue `brandenburg.msg` muss noch per
+`uploadfs` auf ein Gerät und an derselben Kreuzung nachgefahren werden.
 
 Weiter zu beobachten:
 

@@ -29,13 +29,20 @@ gebaut und gelinkt (auch die neue Partitionstabelle), aber ohne Gerät in
 dieser Sitzung nie eine echte AP-Verbindung, ein echter Upload oder eine
 echte Neustart-Übernahme. Offene Fragen dazu in `backlog.md`, Punkt 1a.
 
-**Aus der zweiten Testfahrt bestätigt (echtes Problem, kein Verdacht mehr):**
-nach dem Abbiegen aus einer Tempo-30-Zone blieb das Limit ~400 m auf 30
-stehen, weil `MATCH_HYSTERESIS` auf einer parallel verlaufenden Zonen-Kette
-zu lange festhielt — mit den Kartendaten gegengerechnet, siehe `history.md`
-2026-08-14. Fix ist eine zeitliche Grenze der Hysterese
-(`MATCH_HYSTERESIS_MAX_MS`, 4 s), sauber gebaut, aber **die 4 s sind
-ungeprüft** — das ist der naheliegendste nächste Test.
+**Aus der zweiten Testfahrt bestätigt und an der Quelle behoben:** nach dem
+Abbiegen aus einer Tempo-30-Zone blieb das Limit auf 30 stehen. Ursache war
+kein "die Hysterese hält halt lange fest" (das war ein erster, vom Nutzer
+zu Recht angezweifelter Erklärungsversuch), sondern ein echter Fehler in
+`tools/osm_to_grid.py`: `chain()` verschweißte an Kreuzungen innerhalb von
+Tempo-30-Zonen unabhängige Straßen zu einer Kette, weil alle Straßen einer
+Zone dieselbe Kennzeichnung tragen und nur Ende-trifft-Anfang plus gleiche
+Kennzeichnung geprüft wurde, nicht die Richtung. Fix: `chain()` verkettet
+nur noch bei ≤60° Richtungsänderung an der Naht; `brandenburg.msg` neu
+erzeugt und ersetzt. Details und Zahlen in `history.md` 2026-08-14. Die
+4-Sekunden-Hysterese-Grenze (`MATCH_HYSTERESIS_MAX_MS`) bleibt zusätzlich
+als Sicherheitsnetz. **Nicht auf Hardware geprüft** — die neue Karte muss
+noch per `uploadfs` auf ein Gerät und an derselben Kreuzung nachgefahren
+werden.
 
 ## Wo was liegt
 
@@ -114,9 +121,10 @@ Kern: ein großflächiger Neuaufbau kostet 85–100 ms, davon nur 10 %
 
 ## Nächster Brocken
 
-Dieselbe Kreuzung (52.460744, 13.521135) noch einmal abfahren: hält die auf
-4 s begrenzte Hysterese das Limit jetzt zügig auf 50, ohne an echten
-Kreuzungen neu zu flackern? Siehe `backlog.md`, Punkt 2.
+`pio run -t uploadfs` mit der neu erzeugten `brandenburg.msg` und dieselbe
+Kreuzung (52.460744, 13.521135) noch einmal abfahren: kommt die
+Verkettungs-Korrektur in `chain()` tatsächlich an, wechselt das Limit jetzt
+zügig auf 50? Siehe `backlog.md`, Punkt 2.
 
 Danach: erste Testrunde des Kartenupdates per Access Point auf echter
 Hardware (Backlog Punkt 1a) — verbinden, hochladen, neu starten, prüfen ob
