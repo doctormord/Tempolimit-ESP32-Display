@@ -307,3 +307,38 @@ Der eigentliche Befund von vorhin (reale Limits 100-130 passen mit
 ordentlich Rand, verglichen mit dem `888`-Schlimmstfall) bleibt davon
 unberührt - nur die Prämisse "geht technisch nicht" war falsch, nicht die
 Einschätzung "vermutlich kein Problem".
+
+## 2026-08-14 — Zweite Testfahrt: Limit blieb 400 m zu lange stehen
+
+Erste echte Rückmeldung aus `backlog.md` Punkt 2. Auf der Straße: von einer
+Tempo-30-Zone rechts auf eine unbeteiligte 50er-Straße abgebogen (Kreuzung
+52.460744, 13.521135) - die Anzeige blieb rund 400 m auf 30, statt sofort
+auf 50 zu wechseln. Ein Neustart des ESP32 an derselben Stelle korrigierte es
+augenblicklich.
+
+**Mit `data/maps/brandenburg.msg` gegengerechnet** statt geraten (kleiner
+Python-Leser fürs MSG2-Format, siehe `handoff.md`): die Kreuzung liegt in
+einem dichten Tempo-30-Zonen-Gebiet, und direkt daneben verläuft eine lange
+Zonen-Kette (mehrere hundert Meter) recht nah an der eigentlich befahrenen
+50er-Straße entlang - nah genug, um durchgehend im 30-m-Suchradius zu bleiben
+und score-mäßig konkurrenzfähig zu `MATCH_HYSTERESIS` (1,6) zu sein.
+
+**Warum der Neustart sofort half, war der entscheidende Hinweis:** er setzt
+`last_speed_` auf -1 zurück, und der erste Lookup danach entscheidet ganz
+ohne Hysterese rein nach Abstand/Kurs. Das schließt einen falschen Treffer
+als Ursache aus - die Karte und der Kurs-Filter lagen die ganze Zeit richtig,
+nur die Hysterese hielt zu lange am alten Wert fest. Genau das stand als
+offene Frage schon in `backlog.md` Punkt 2 ("MATCH_HYSTERESIS auf parallelen
+Straßen").
+
+**Fix:** Hysterese jetzt zusätzlich zeitlich begrenzt auf
+`MATCH_HYSTERESIS_MAX_MS` (4 s, `speedlimit_grid.h`/`config.h`). Das reicht
+für eine kurze Ambiguität an einer Kreuzung, aber nicht mehr für hunderte
+Meter auf einer parallel verlaufenden Straße. Dafür bekommt `lookup()` jetzt
+`now_ms` als Parameter (`millis()` vom Aufrufer) - einziger Aufrufer ist
+`main.cpp`, entsprechend angepasst.
+
+Sauber gebaut (Firmware, +32 Byte Flash). **Nicht auf Hardware geprüft** -
+die 4 s sind eine erste, plausible Schätzung, keine Messung. Nächste
+Testfahrt sollte gezielt an derselben Kreuzung gegenprüfen, ob 4 s reichen,
+ohne an echten Kreuzungen neues Flackern einzuführen.

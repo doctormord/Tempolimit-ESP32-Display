@@ -72,11 +72,12 @@ class SpeedLimitGrid {
    * course_deg: GPS-Kurs (0-360), bei <0 wird der Richtungsfilter übersprungen.
    * hour_local: Ortszeit-Stunde 0-23, weekday: 0=Mo ... 6=So.
    * time_valid=false -> zeitliche Limits werden ignoriert (Grundlimit gilt).
+   * now_ms: millis() des Aufrufers - fuer die zeitlich begrenzte Hysterese,
+   * siehe MATCH_HYSTERESIS_MAX_MS in config.h.
    */
   int lookup(double lat, double lon, float course_deg, float speed_kmh,
-             uint8_t hour_local = 0, uint8_t weekday = 0,
-             bool time_valid = false, double lat_ahead = 0.0,
-             double lon_ahead = 0.0) {
+             uint8_t hour_local, uint8_t weekday, bool time_valid,
+             double lat_ahead, double lon_ahead, uint32_t now_ms) {
     if (!ready_) return -1;
 
     int32_t lat_e6 = (int32_t)llround(lat * 1e6);
@@ -136,16 +137,34 @@ class SpeedLimitGrid {
       last_reason_ = 0;
       return -1;
     }
-    // Hysterese: beim vorherigen Limit bleiben, solange es plausibel ist
-    if (cx.prev_speed > 0 && cx.prev_dist <= MATCH_MAX_DIST_M &&
-        cx.prev_score < cx.best_score * MATCH_HYSTERESIS) {
-      last_speed_ = cx.prev_speed;
-      last_reason_ = cx.prev_reason;
-      return cx.prev_speed;
-    }
-    last_speed_ = cx.best_speed;
-    last_reason_ = cx.best_reason;
-    return cx.best_speed;
+    /*
+     * Hysterese: beim vorherigen Limit bleiben, solange es plausibel ist -
+     * ABER nur fuer MATCH_HYSTERESIS_MAX_MS. Ohne die Zeitgrenze blieb die
+     * Anzeige nach einem Abbiegen aus einer Tempo-30-Zone auf einer davon
+     * unbeteiligten 50er-Strasse ueber 400 m auf 30 haengen, weil eine lange,
+     * parallel verlaufende Zonen-Kette die ganze Strecke ueber im
+     * Suchradius blieb und score-maessig nah genug dran war (echte
+     * Testfahrt, siehe history.md). Ein Neustart behob es sofort, weil
+     * last_speed_ dabei auf -1 zurueckfaellt und der erste Lookup danach
+     * ohne jede Hysterese rein nach Abstand/Kurs entscheidet - das war der
+     * Hinweis, dass es an der Haltedauer lag, nicht an einem falschen Match.
+     *
+     * Die Zeitgrenze reicht fuer eine kurze Ambiguitaet an einer Kreuzung
+     * (Sekunden), aber nicht fuer hunderte Meter auf einer parallelen
+     * Strasse. hold_since_ms_ merkt sich, seit wann last_speed_ den
+     * aktuellen Wert traegt - nicht seit wann zuletzt hysteretisch
+     * gehalten wurde, sonst haette jede weitere Aktualisierung die Uhr
+     * wieder auf null gesetzt und die Grenze nie gegriffen.
+     */
+    bool hyst_ok = cx.prev_speed > 0 && cx.prev_dist <= MATCH_MAX_DIST_M &&
+                   cx.prev_score < cx.best_score * MATCH_HYSTERESIS &&
+                   (now_ms - hold_since_ms_) < MATCH_HYSTERESIS_MAX_MS;
+    int new_speed = hyst_ok ? cx.prev_speed : cx.best_speed;
+    uint8_t new_reason = hyst_ok ? cx.prev_reason : cx.best_reason;
+    if (new_speed != last_speed_) hold_since_ms_ = now_ms;
+    last_speed_ = new_speed;
+    last_reason_ = new_reason;
+    return new_speed;
   }
 
  private:
@@ -199,6 +218,9 @@ class SpeedLimitGrid {
   bool ready_ = false;
   int last_speed_ = -1;
   uint8_t last_reason_ = 0;
+  // Seit wann last_speed_ den aktuellen Wert traegt - Basis der
+  // zeitlich begrenzten Hysterese, siehe lookup().
+  uint32_t hold_since_ms_ = 0;
   bool use_course_ = false;
   float course_ = -1.0f;
   uint8_t hour_ = 0, weekday_ = 0;

@@ -29,6 +29,14 @@ gebaut und gelinkt (auch die neue Partitionstabelle), aber ohne Gerät in
 dieser Sitzung nie eine echte AP-Verbindung, ein echter Upload oder eine
 echte Neustart-Übernahme. Offene Fragen dazu in `backlog.md`, Punkt 1a.
 
+**Aus der zweiten Testfahrt bestätigt (echtes Problem, kein Verdacht mehr):**
+nach dem Abbiegen aus einer Tempo-30-Zone blieb das Limit ~400 m auf 30
+stehen, weil `MATCH_HYSTERESIS` auf einer parallel verlaufenden Zonen-Kette
+zu lange festhielt — mit den Kartendaten gegengerechnet, siehe `history.md`
+2026-08-14. Fix ist eine zeitliche Grenze der Hysterese
+(`MATCH_HYSTERESIS_MAX_MS`, 4 s), sauber gebaut, aber **die 4 s sind
+ungeprüft** — das ist der naheliegendste nächste Test.
+
 ## Wo was liegt
 
 | | |
@@ -106,9 +114,10 @@ Kern: ein großflächiger Neuaufbau kostet 85–100 ms, davon nur 10 %
 
 ## Nächster Brocken
 
-Erste Testrunde des Kartenupdates per Access Point auf echter Hardware
-(Backlog Punkt 1a) — verbinden, hochladen, neu starten, prüfen ob die neue
-Region ankommt. Offene Einzelfragen dazu in `backlog.md`, Punkt 1a.
+Dieselbe Kreuzung (52.460744, 13.521135) noch einmal abfahren: hält die auf
+4 s begrenzte Hysterese das Limit jetzt zügig auf 50, ohne an echten
+Kreuzungen neu zu flackern? Siehe `backlog.md`, Punkt 2.
 
-Danach weiterhin offen: die zweite Testfahrt auswerten (`backlog.md`,
-Punkt 2).
+Danach: erste Testrunde des Kartenupdates per Access Point auf echter
+Hardware (Backlog Punkt 1a) — verbinden, hochladen, neu starten, prüfen ob
+die neue Region ankommt. Offene Einzelfragen dazu in `backlog.md`, Punkt 1a.

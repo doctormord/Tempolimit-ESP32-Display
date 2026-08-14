@@ -327,6 +327,18 @@
  * ========================================================================== */
 #define MATCH_MAX_DIST_M 30.0f      /* max. Abstand zur Strasse            */
 #define MATCH_HYSTERESIS 1.6f       /* Vorzug fuers zuletzt gewaehlte Segment */
+/*
+ * Ohne zeitliche Grenze hielt die Hysterese das Limit einer verlassenen
+ * Tempo-30-Zone auf einer voellig anderen, parallel verlaufenden Strasse bis
+ * zu 400 m lang - eine lange Zonen-Kette blieb die ganze Strecke ueber im
+ * Suchradius und war score-maessig nah genug dran. Ein Neustart (der
+ * last_speed_ auf -1 zurücksetzt) korrigierte es sofort - Beleg, dass die
+ * Haltedauer das Problem war, nicht ein falscher Treffer. Reale Testfahrt,
+ * siehe history.md. 4 s reichen fuer eine kurze Ambiguitaet an einer
+ * Kreuzung, aber nicht fuer eine parallele Strasse ueber mehrere hundert
+ * Meter.
+ */
+#define MATCH_HYSTERESIS_MAX_MS 4000UL
 
 /* Unterhalb dieser Geschwindigkeit ist der GPS-Kurs Rauschen. Gilt fuer den
    Richtungsfilter beim Matching UND fuer die Vorausschau - es ist dieselbe

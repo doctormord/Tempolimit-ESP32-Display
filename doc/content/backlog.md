@@ -74,13 +74,28 @@ Hardware geprüft** (Board war beim Fixen nicht angeschlossen):
 - Überschreitung ohne Blende, harter Farbwechsel
 - `SWITCH_AHEAD_MS` 600 → 300
 
-Zu beobachten:
+**Erste echte Rückmeldung von der Straße (2026-08-14):** rechts aus einer
+Tempo-30-Zone auf eine unbeteiligte 50er-Straße abgebogen (Kreuzung
+52.460744, 13.521135), Anzeige blieb ~400 m auf 30 statt sofort auf 50 zu
+wechseln — Neustart an derselben Stelle korrigierte es sofort. Mit den
+Kartendaten gegengerechnet: die Kreuzung liegt in einem dichten
+Zonen-Gebiet, eine lange parallel verlaufende Zonen-Kette blieb die ganze
+Strecke im Suchradius. Genau das war hier schon als Verdacht notiert
+("`MATCH_HYSTERESIS` auf parallelen Straßen") — jetzt mit echten Daten
+bestätigt. Fix: Hysterese zusätzlich zeitlich auf `MATCH_HYSTERESIS_MAX_MS`
+(4 s) begrenzt, siehe `history.md`. **Nicht auf Hardware geprüft** — die
+nächste Testfahrt sollte gezielt an dieser Kreuzung gegenprüfen, ob 4 s
+reichen, ohne an echten Kreuzungen neues Flackern einzuführen. Falls die
+Zonen-Kette sehr viel länger als ~4 s Fahrzeit ist (schnelles Fahren auf der
+Straße), könnte selbst 4 s noch zu großzügig oder zu knapp sein — das zeigt
+erst die nächste Fahrt.
+
+Weiter zu beobachten:
 
 - Kommen die Limits jetzt zum richtigen Zeitpunkt? Wenn weiterhin zu früh, ist
   `MATCH_MAX_DIST_M` (30 m) der nächste Hebel — bei dem Radius gewinnt eine
   einmündende Straße, bevor man sie erreicht.
 - Verhalten an Kreuzungen mit der Vorausschau.
-- `MATCH_HYSTERESIS` (1,6) auf parallelen Straßen.
 
 ## 3. Datenformat weiter verkleinern
 

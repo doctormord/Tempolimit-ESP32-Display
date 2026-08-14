@@ -1030,7 +1030,7 @@ void loop() {
       snapshot.limit =
           grid.lookup(qlat, qlon, course, snapshot.speed_kmh,
                       snapshot.hour, snapshot.weekday, snapshot.time_valid,
-                      alat, alon);
+                      alat, alon, now);
       snapshot.reason = grid.reason();
     } else {
       snapshot.limit = -1;
