@@ -23,11 +23,11 @@ Simulator läuft, mehr nicht:
 
 Das ist der erste Punkt, den die nächste Sitzung prüfen sollte.
 
-**Ebenfalls nur gebaut, nicht auf Hardware geprüft:** das Kartenupdate per
-Access Point (`src/webupdate.h`/`.cpp`, Backlog Punkt 1a). Zweimal sauber
-gebaut und gelinkt (auch die neue Partitionstabelle), aber ohne Gerät in
-dieser Sitzung nie eine echte AP-Verbindung, ein echter Upload oder eine
-echte Neustart-Übernahme. Offene Fragen dazu in `backlog.md`, Punkt 1a.
+**Kartenupdate per Access Point:** startet auf echter Hardware sauber
+(Serial-Log: `[Update] AP "Tempolimit-Setup" gestartet,
+http://192.168.4.1/`). Was das noch nicht abdeckt: eine echte
+Browser-Verbindung, ein echter Upload oder eine echte Neustart-Übernahme.
+Offene Fragen dazu in `backlog.md`, Punkt 1a.
 
 **Aus der zweiten Testfahrt bestätigt und an der Quelle behoben:** nach dem
 Abbiegen aus einer Tempo-30-Zone blieb das Limit auf 30 stehen. Ursache war
@@ -40,9 +40,17 @@ Kennzeichnung geprüft wurde, nicht die Richtung. Fix: `chain()` verkettet
 nur noch bei ≤60° Richtungsänderung an der Naht; `brandenburg.msg` neu
 erzeugt und ersetzt. Details und Zahlen in `history.md` 2026-08-14. Die
 4-Sekunden-Hysterese-Grenze (`MATCH_HYSTERESIS_MAX_MS`) bleibt zusätzlich
-als Sicherheitsnetz. **Nicht auf Hardware geprüft** — die neue Karte muss
-noch per `uploadfs` auf ein Gerät und an derselben Kreuzung nachgefahren
-werden.
+als Sicherheitsnetz.
+
+**Firmware und neue Karte sind geflasht** (2026-08-14, `pio run -t upload`
+und `-t uploadfs` über den USB-UART-Port). Serial-Log bestätigt einen
+sauberen Boot: `[FS] LittleFS: 2830336 von 13500416 Byte belegt` (die neue,
+größere `brandenburg.msg`), `[Grid] brandenburg 222x178 Zellen, 13702
+belegt, Index 107 KiB in 37 ms`, `[Grid] 1 Region(en): brandenburg`, dazu
+der AP-Start (siehe oben). GPS fand die Baudrate (9600 auf GPIO18), aber
+noch kein Fix (Test lief ohne Antennensicht). **Noch nicht geprüft: die
+eigentliche Testfahrt an der Kreuzung selbst** (52.460744, 13.521135) mit
+echtem GPS-Fix draußen — das ist der naheliegendste nächste Schritt.
 
 ## Wo was liegt
 
@@ -121,11 +129,11 @@ Kern: ein großflächiger Neuaufbau kostet 85–100 ms, davon nur 10 %
 
 ## Nächster Brocken
 
-`pio run -t uploadfs` mit der neu erzeugten `brandenburg.msg` und dieselbe
-Kreuzung (52.460744, 13.521135) noch einmal abfahren: kommt die
-Verkettungs-Korrektur in `chain()` tatsächlich an, wechselt das Limit jetzt
-zügig auf 50? Siehe `backlog.md`, Punkt 2.
+Firmware und Karte sind bereits geflasht (siehe oben) — jetzt dieselbe
+Kreuzung (52.460744, 13.521135) draußen mit echtem GPS-Fix abfahren: kommt
+die Verkettungs-Korrektur in `chain()` tatsächlich an, wechselt das Limit
+jetzt zügig auf 50? Siehe `backlog.md`, Punkt 2.
 
-Danach: erste Testrunde des Kartenupdates per Access Point auf echter
-Hardware (Backlog Punkt 1a) — verbinden, hochladen, neu starten, prüfen ob
-die neue Region ankommt. Offene Einzelfragen dazu in `backlog.md`, Punkt 1a.
+Danach: mit einem Handy tatsächlich mit dem AP "Tempolimit-Setup" verbinden,
+eine `.msg`-Datei hochladen, neu starten, prüfen ob die Region ankommt.
+Offene Einzelfragen dazu in `backlog.md`, Punkt 1a.

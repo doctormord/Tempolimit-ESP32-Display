@@ -11,7 +11,7 @@ Heute braucht ein Kartenwechsel `osmium`, Python und `pio run -t uploadfs`
 auf einem eingerichteten Rechner. Für ein Gerät, das im Auto hängt, ist das
 zu viel.
 
-### a) Weboberfläche über einen Access Point — umgesetzt, ungeprüft auf Hardware
+### a) Weboberfläche über einen Access Point — umgesetzt, AP-Start auf Hardware bestätigt
 
 `src/webupdate.h`/`.cpp`, siehe `history.md` (2026-08-14) für den Weg dahin
 und die Partitionstabellen-Sackgasse unterwegs. Kurzfassung: AP
@@ -22,9 +22,11 @@ Weboberfläche unter `http://192.168.4.1/`, Upload/Löschen legt Änderungen in
 `SpeedLimitGrid` könnte gerade ein offenes File-Handle auf die betroffene
 Regionsdatei halten).
 
-**Nächster Schritt: erste Testrunde auf echter Hardware.** Zweimal sauber
-gebaut, mehr nicht — auf dem Gerät weder AP-Verbindung noch Upload noch
-Neustart-Übernahme geprüft. Zu beobachten:
+**Nächster Schritt: erste echte Verbindung.** Auf dem Gerät bestätigt
+(2026-08-14, Serial-Log): der AP startet sauber
+(`[Update] AP "Tempolimit-Setup" gestartet, http://192.168.4.1/`). Noch
+offen: eine echte Browser-Verbindung, ein echter Upload, eine echte
+Neustart-Übernahme. Zu beobachten:
 
 - Verbindet sich ein Handy anstandslos mit dem offenen AP? Manche Geräte
   melden offene Netze ohne Internet als "kein Internet, trotzdem verbinden".
@@ -99,8 +101,9 @@ Ketten, 2,61 → 2,68 MiB). Alle Demo-Wegpunkte weiterhin ohne Abweichung.
 Die 4-Sekunden-Hysterese-Grenze (`MATCH_HYSTERESIS_MAX_MS`) bleibt als
 Sicherheitsnetz drin, ist aber nicht mehr die Haupterklärung.
 
-**Nicht auf Hardware geprüft** — die neue `brandenburg.msg` muss noch per
-`uploadfs` auf ein Gerät und an derselben Kreuzung nachgefahren werden.
+**Auf dem Gerät (2026-08-14):** Firmware und die neue `brandenburg.msg`
+sind geflasht, Boot-Log bestätigt Größe und Regionsliste. **Noch offen:**
+die eigentliche Testfahrt an der Kreuzung mit echtem GPS-Fix draußen.
 
 Weiter zu beobachten:
 

@@ -397,3 +397,26 @@ verhindert aber nicht mehr das eigentliche, jetzt behobene Problem.
 
 **Nicht auf Hardware geprüft** - die neue `brandenburg.msg` muss noch per
 `uploadfs` auf ein Gerät und an derselben Kreuzung nachgefahren werden.
+
+## 2026-08-14 — Firmware und neue Karte geflasht, Boot bestätigt
+
+Geraet war ueber die USB-UART-Bruecke erreichbar (`/dev/cu.usbmodem...`).
+`pio run -t upload` und `-t uploadfs` liefen durch, beide mit Hash-Verifikation
+bestaetigt. Serial-Log (per pyserial mitgelesen, `pio device monitor`
+scheitert ohne echtes TTY):
+
+    [FS] LittleFS: 2830336 von 13500416 Byte belegt
+    [Grid] brandenburg  222x178 Zellen, 13702 belegt, Index 107 KiB in 37 ms
+    [Grid] 1 Region(en): brandenburg
+    [Update] AP "Tempolimit-Setup" gestartet, http://192.168.4.1/
+    [GPS] gueltige NMEA-Saetze auf RX=GPIO18, 9600 Baud
+
+Damit bestaetigt: die neue, groessere `brandenburg.msg` ist tatsaechlich auf
+dem Geraet (Byte-Zahl passt zur neuen Dateigroesse), die neue
+Partitionstabelle mountet die FS-Partition weiterhin korrekt, und der
+Access Point aus Backlog 1a startet auf echter Hardware. Kein Fix beim Test
+(drinnen, keine Antennensicht) - GPS-Automatik fand aber sofort die richtige
+Verbindung.
+
+Noch offen: eine echte Testfahrt an der Kreuzung (52.460744, 13.521135) mit
+Fix draussen, und eine echte Browser-Verbindung zum AP mit Upload.
