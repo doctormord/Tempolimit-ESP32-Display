@@ -1,14 +1,14 @@
 /*
- * webupdate.h - Kartendaten ohne Toolchain aktualisieren (Backlog Punkt 1a)
+ * webupdate.h - update map data without a toolchain (backlog item 1a)
  *
- * Access Point + Weboberflaeche, ueber die fertige .msg-Regionsdateien
- * hochgeladen und installierte Regionen geloescht werden koennen, ohne
- * PlatformIO oder osmium auf dem Rechner. Details und Begruendung stehen bei
- * den Konstanten in config.h.
+ * Access point + web UI through which finished .msg region files can be
+ * uploaded and installed regions deleted, without PlatformIO or osmium on
+ * the user's computer. Details and rationale live with the constants in
+ * config.h.
  *
- * Arduino/ESP32-spezifisch (WiFi, LittleFS) - anders als ui.c/ui.h nicht
- * plattformneutral und wird vom Simulator nicht mit uebersetzt (siehe
- * sim/CMakeLists.txt, das seine Quelldateien einzeln auflistet).
+ * Arduino/ESP32-specific (WiFi, LittleFS) - unlike ui.c/ui.h this is not
+ * platform-neutral and is not compiled by the simulator (see
+ * sim/CMakeLists.txt, which lists its source files individually).
  */
 
 #pragma once
@@ -16,19 +16,29 @@
 #include <FS.h>
 
 /*
- * Uebernimmt in PENDING_DIR gesammelte Aenderungen (neue/ersetzte Regionen,
- * Loeschmarkierungen) nach GRID_DIR.
+ * applyPendingMapChanges(fs) - apply changes staged in PENDING_DIR (new/
+ * replaced regions, deletion markers) to GRID_DIR.
  *
- * Muss vor SpeedLimitGrid::begin() aufgerufen werden, und zwar bevor
- * irgendein File-Handle auf eine Regionsdatei offen ist - genau deshalb
- * wirken Aenderungen ueber die Weboberflaeche erst nach einem Neustart.
+ * Parameters:
+ *   fs - the already-mounted filesystem to operate on
+ *
+ * Must be called before SpeedLimitGrid::begin(), and specifically before
+ * any file handle on a region file is open - that's exactly why changes
+ * made through the web UI only take effect after a restart.
  */
 void applyPendingMapChanges(fs::FS &fs);
 
-/* Startet den Access Point und die Weboberflaeche. Nach LittleFS.begin()
-   und applyPendingMapChanges() aufrufen. */
+/*
+ * webupdateBegin() - start the access point and the web UI.
+ *
+ * Call after LittleFS.begin() and applyPendingMapChanges().
+ */
 void webupdateBegin();
 
-/* Gehoert in jeden loop()-Durchlauf. Ausserhalb einer Wartungssitzung kostet
-   das nur einen Pin-Read und einen millis()-Vergleich. */
+/*
+ * webupdateLoop() - service the access point and web server.
+ *
+ * Belongs in every loop() iteration. Outside of an active maintenance
+ * session this only costs a pin read and a millis() comparison.
+ */
 void webupdateLoop();

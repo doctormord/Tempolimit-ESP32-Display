@@ -1,19 +1,20 @@
 /*
- * ui.c - Aufbau und Aktualisierung der Anzeige
+ * ui.c - builds and updates the display
  *
- * Layout (360x360, rund):
- *   - lv_arc als roter Rand, gleichzeitig Fuellbalken (Tempo / Limit)
- *   - weisses Innenfeld mit der Ziffer
- *   - halbtransparentes Statusband unten, schneidet den Rand an
+ * Layout (360x360, round):
+ *   - lv_arc as a red ring, doubling as the fill bar (speed / limit)
+ *   - white inner disc holding the digit
+ *   - semi-transparent status band at the bottom, cutting into the ring
  *
- * Proportionen: Rand = 10 % des Durchmessers, Schriftgrad 55 % (zweistellig)
- * bzw. 48 % (dreistellig) des Durchmessers.
+ * Proportions: ring = 10% of the diameter, font size 55% (two digits)
+ * resp. 48% (three digits) of the diameter.
  *
- * Das liegt bewusst ueber den amtlichen Schild-Proportionen (die waeren 46 %
- * und 40 %). Am Armaturenbrett zaehlt der kurze Blick, nicht die Normtreue.
- * Geprueft: der breiteste Fall "888" belegt 191 px, an dieser Hoehe stehen im
- * Kreis 260 px zur Verfuegung. Wer weiter vergroessert, muss das nachrechnen -
- * die weisse Flaeche ist rund, die nutzbare Breite nimmt zu den Raendern hin ab.
+ * This deliberately exceeds the official road-sign proportions (which
+ * would be 46% and 40%). On a dashboard what matters is the split-second
+ * glance, not fidelity to the standard. Verified: the widest case "888"
+ * takes up 191px, and at that height the circle offers 260px. Anyone
+ * enlarging this further has to re-check that - the white area is round,
+ * so usable width shrinks toward the top and bottom edges.
  */
 
 #include "ui.h"
@@ -22,13 +23,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#define RING_W (UI_SIZE / 10)      // 36 px roter Rand
-#define GAUGE_GAP 60               // Luecke unten, deckt sich mit dem Band
+#define RING_W (UI_SIZE / 10)      // 36px red ring
+#define GAUGE_GAP 60               // gap at the bottom, matches the status band
 #define STATUS_H 58
 
-// LVGL misst Winkel ab 3 Uhr im Uhrzeigersinn. Unten mittig = 90 Grad.
+// LVGL measures angles from 3 o'clock, clockwise. Bottom-center = 90 degrees.
 #define ARC_START (90 + GAUGE_GAP / 2)          // 120
-#define ARC_END (90 - GAUGE_GAP / 2 + 360)      // 420 -> laeuft ueber 0 hinweg
+#define ARC_END (90 - GAUGE_GAP / 2 + 360)      // 420 -> wraps past 0
 
 #define COL_RED 0xC1121F
 #define COL_EMPTY 0x232830
@@ -37,10 +38,10 @@
 #define COL_GREY 0x5A626D
 
 /*
- * Verkehrsblau nach RAL 5017 - die Farbe deutscher blauer Verkehrszeichen,
- * also auch der Fahrradstrasse (Zeichen 244.1). Bewusst nicht reines Blau:
- * RAL 5017 ist deutlich dunkler und entsaettigter, weisse Schrift steht
- * darauf mit rund 7:1 Kontrast.
+ * Traffic blue per RAL 5017 - the color used on real German blue traffic
+ * signs, including the bicycle-street sign (Zeichen 244.1). Deliberately
+ * not pure blue: RAL 5017 is noticeably darker and less saturated, and
+ * white text on it reads at roughly 7:1 contrast.
  */
 #define COL_BLUE 0x005387
 
@@ -54,23 +55,23 @@ static lv_obj_t *band;
 static lv_obj_t *lbl_fix;
 static lv_obj_t *lbl_pos;
 
-// Ziel und Ist des Fuellbalkens. ui_update() setzt das Ziel, ui_tick() laeuft
-// darauf zu. arc_shown haelt fest, was tatsaechlich gezeichnet ist - nur bei
-// echter Aenderung wird lv_arc_set_value() gerufen, sonst invalidiert LVGL
-// den Ring ohne Grund.
+// Target and current value of the fill bar. ui_update() sets the target,
+// ui_tick() eases toward it. arc_shown_ang tracks what's actually drawn -
+// lv_arc_set_value() is only called on a real change, otherwise LVGL would
+// invalidate the ring for nothing.
 static float arc_target = 0.0f;
 static float arc_value = 0.0f;
 static float arc_shown_ang = -1.0f;
 
 /*
- * Ueberblendung der Zahl. ui_update() legt den neuen Text nur ab; ui_tick()
- * blendet aus, tauscht am Nulldurchgang und blendet wieder ein. Ohne das
- * springt die Zahl hart um, was bei 17 Hz Aktualisierung unruhig wirkt.
+ * Number crossfade. ui_update() only stashes the new text; ui_tick() fades
+ * it out, swaps it at the zero crossing, and fades it back in. Without this,
+ * the number would hard-cut, which looks jittery at a 17Hz update rate.
  */
 /*
- * Farbueberblendung. Ohne sie springt der Wechsel rot->weiss hart um, waehrend
- * die Ziffer weich ueberblendet - das sah widerspruechlich aus. Flaeche, Ring
- * und Schrift laufen jetzt mit derselben Zeit ineinander.
+ * Color crossfade. Without it, the red<->white swap would hard-cut while
+ * the digit crossfades smoothly - that looked inconsistent. Area, ring and
+ * text now all transition over the same duration.
  */
 static uint32_t col_from_bg, col_to_bg;
 static uint32_t col_from_fg, col_to_fg;
@@ -79,6 +80,17 @@ static float col_prog = 1.0f;
 
 static void applyColors(void);
 
+/*
+ * mix(a, b, t) - linearly interpolate two 0xRRGGBB colors.
+ *
+ * Parameters:
+ *   a - start color (t = 0)
+ *   b - end color (t = 1)
+ *   t - progress, 0..1 (not clamped; caller is expected to keep it in range)
+ *
+ * Blends each channel independently; used to compute the in-between frames
+ * of a color crossfade (FADE_MODE == 1 only).
+ */
 static uint32_t mix(uint32_t a, uint32_t b, float t) {
   int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
   int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
@@ -98,16 +110,17 @@ static bool fade_active = false;
 static float fade_opa = 255.0f;
 static bool fade_out = true;
 
-// Grosse Ziffern brauchen einen konvertierten Font (LVGL-Fonts enden bei
-// 48 px). Bis der vorliegt, wird der groesste eingebaute benutzt.
+// Large digits need a converted font (built-in LVGL fonts stop at 48px).
+// Until one is available, the largest built-in font is used as a fallback.
 #if defined(USE_DIN_FONT) && defined(USE_DIN_MITTEL)
-extern const lv_font_t lv_font_din_m205;   // zweistellig
-extern const lv_font_t lv_font_din_m162;   // dreistellig, auch fuer "frei"
-extern const lv_font_t lv_font_din_m48;    // Beschriftung unter der Ziffer
-extern const lv_font_t lv_font_din_m72;    // Tempo unter dem Piktogramm
-/* Tabellenziffern fuer den Tacho: dort wechselt die Zahl staendig, und mit
-   proportionalen Ziffern springt sie seitlich, weil die 1 halb so breit ist
-   wie die uebrigen. Genau dafuer gibt es Tabellenziffern. */
+extern const lv_font_t lv_font_din_m205;   // two-digit
+extern const lv_font_t lv_font_din_m162;   // three-digit, also used for "frei"
+extern const lv_font_t lv_font_din_m48;    // reason label below the digit
+extern const lv_font_t lv_font_din_m72;    // speed shown below the pictogram
+/* Tabular-figure fonts for the speedometer: there the number keeps
+   changing, and with proportional digits it would jitter sideways because
+   "1" is half as wide as the other digits. That's exactly what tabular
+   figures are for. */
 extern const lv_font_t lv_font_din_m205t;
 extern const lv_font_t lv_font_din_m162t;
 #define FONT_2DIGIT (&lv_font_din_m205)
@@ -137,8 +150,9 @@ extern const lv_font_t lv_font_din_171t;
 #define FONT_2DIGIT_T (&lv_font_montserrat_48)
 #define FONT_3DIGIT_T (&lv_font_montserrat_48)
 #else
-// Notnagel: der Standardfont ist winzig, aber es compiliert. Wenn du das
-// siehst, ist LV_FONT_MONTSERRAT_48 in lv_conf.h noch nicht auf 1.
+// Last-resort fallback: the default font is tiny, but at least it compiles.
+// If you're seeing this, LV_FONT_MONTSERRAT_48 isn't enabled yet in
+// lv_conf.h.
 #define FONT_2DIGIT (LV_FONT_DEFAULT)
 #define FONT_3DIGIT (LV_FONT_DEFAULT)
 #define FONT_LABEL (LV_FONT_DEFAULT)
@@ -147,21 +161,33 @@ extern const lv_font_t lv_font_din_171t;
 #define FONT_3DIGIT_T (LV_FONT_DEFAULT)
 #endif
 
-// Statuszeilen in Festbreite: bei Proportionalschrift wandern die Ziffern
-// bei jedem Wechsel seitlich, was bei 5 Hz unruhig aussieht.
+// Status lines use a fixed-width font: with a proportional font the digits
+// would shift sideways on every update, which looks jittery at 5Hz.
 extern const lv_font_t lv_font_mono16;
 #define FONT_STATUS (&lv_font_mono16)
 
 /*
- * Piktogramme fuer Fahrrad- und Spielstrasse, freigestellt aus den amtlichen
- * Zeichen 244.1 und 325.1 (tools/png_to_lvgl.py). Format A8: nur Deckkraft,
- * die Farbe kommt beim Zeichnen aus image_recolor - deshalb dasselbe Bild
- * weiss auf blau und bei Bedarf in jeder anderen Farbe.
+ * Pictograms for the bicycle-street and play-street signs, cut out from the
+ * official Zeichen 244.1 and 325.1 (tools/png_to_lvgl.py). Format A8: only
+ * opacity is stored, the color is applied at draw time via image_recolor -
+ * so the same bitmap renders white-on-blue, or any other color, without
+ * re-generating it.
  */
 extern const lv_image_dsc_t img_fahrrad;
 extern const lv_image_dsc_t img_spielstrasse;
 
-/* Farben in einem Rutsch setzen - ein Neuaufbau statt mehrerer. */
+/*
+ * applyColors() - apply the pending background/text/arc colors in one shot.
+ *
+ * No parameters (reads the file-scope pend_* / pend_colors state set by
+ * ui_update()).
+ *
+ * Batches all four style writes into a single LVGL invalidate/redraw
+ * instead of one per property, and does nothing if no color change is
+ * pending. Called either immediately (no number change in flight) or at the
+ * dark point of a backlight fade (FADE_MODE == 2), so the color swap is
+ * hidden together with the number swap.
+ */
 static void applyColors(void) {
   if (!pend_colors) return;
   pend_colors = false;
@@ -172,13 +198,21 @@ static void applyColors(void) {
   lv_obj_set_style_arc_color(arc, lv_color_hex(pend_arc), LV_PART_INDICATOR);
 }
 
+/*
+ * ui_create() - build the static widget tree once at startup.
+ *
+ * No parameters. Must be called exactly once, before the first ui_update()/
+ * ui_tick(). Creates the ring, the white disc, the digit/pictogram labels,
+ * and the status band, and leaves everything in its default ("no data yet")
+ * state - ui_update() fills in real values afterward.
+ */
 void ui_create(void) {
   lv_obj_t *scr = lv_screen_active();
   lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
   lv_obj_set_style_pad_all(scr, 0, 0);
   lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
-  // --- Rand als Fuellbalken ---
+  // --- ring, doubling as the fill bar ---
   arc = lv_arc_create(scr);
   lv_obj_set_size(arc, UI_SIZE, UI_SIZE);
   lv_obj_center(arc);
@@ -196,10 +230,10 @@ void ui_create(void) {
   lv_obj_set_style_arc_color(arc, lv_color_hex(COL_RED), LV_PART_INDICATOR);
   lv_obj_set_style_arc_rounded(arc, false, LV_PART_INDICATOR);
 
-  // --- weisses Schildfeld ---
+  // --- white sign area ---
   disc = lv_obj_create(scr);
-  // DISC_OVERLAP groesser als die Ringinnenkante, sonst bleibt dort eine
-  // dunkle Linie aus der Kantenglaettung beider Kreise stehen.
+  // DISC_OVERLAP larger than the ring's inner edge, otherwise a dark line
+  // remains there from both circles' antialiasing.
   lv_obj_set_size(disc, UI_SIZE - 2 * RING_W + 2 * DISC_OVERLAP,
                   UI_SIZE - 2 * RING_W + 2 * DISC_OVERLAP);
   lv_obj_center(disc);
@@ -215,9 +249,9 @@ void ui_create(void) {
   lv_label_set_text(lbl_limit, "?");
   lv_obj_center(lbl_limit);
 
-  // Beschriftung unter der Ziffer. Bei y=+88 vom Mittelpunkt ist die
-  // Kreisflaeche noch rund 200 px breit - der laengste Text ("KINDER", 110 px)
-  // passt mit Abstand, und das Statusband beginnt erst 14 px darunter.
+  // Reason label below the digit. At y=+88 from center, the circle is still
+  // about 200px wide - the longest text ("KINDER", 110px) fits with margin,
+  // and the status band only starts 14px further down.
   lbl_reason = lv_label_create(disc);
   lv_obj_set_style_text_font(lbl_reason, FONT_LABEL, 0);
   lv_obj_set_style_text_letter_space(lbl_reason, LABEL_LETTER_SPACE, 0);
@@ -225,15 +259,15 @@ void ui_create(void) {
   lv_label_set_text(lbl_reason, "");
   lv_obj_align(lbl_reason, LV_ALIGN_CENTER, 0, LABEL_Y);
 
-  // Piktogramm sitzt an der Stelle der Ziffer und bleibt versteckt, solange
-  // keins gebraucht wird.
+  // The pictogram sits where the digit normally goes, and stays hidden
+  // until one is actually needed.
   img_sign = lv_image_create(disc);
   lv_obj_set_style_image_recolor_opa(img_sign, LV_OPA_COVER, 0);
   lv_obj_set_style_image_recolor(img_sign, lv_color_hex(COL_WHITE), 0);
   lv_obj_add_flag(img_sign, LV_OBJ_FLAG_HIDDEN);
   lv_obj_align(img_sign, LV_ALIGN_CENTER, 0, PICTO_Y);
 
-  // --- Statusband, halbtransparent ueber dem Rand ---
+  // --- status band, semi-transparent, overlapping the ring ---
   band = lv_obj_create(scr);
   lv_obj_set_size(band, UI_SIZE, STATUS_H);
   lv_obj_align(band, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -244,8 +278,8 @@ void ui_create(void) {
   lv_obj_set_style_pad_all(band, 0, 0);
   lv_obj_remove_flag(band, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Textmitte liegt damit bei y=311 und y=327. Dort ist die Kreisflaeche
-  // noch 245 bzw. 207 px breit - beide Zeilen bleiben mit Abstand drin.
+  // Text centers land at y=311 and y=327. There the circle is still 245
+  // resp. 207px wide - both lines fit with margin.
   lbl_fix = lv_label_create(band);
   lv_obj_set_style_text_font(lbl_fix, FONT_STATUS, 0);
   lv_obj_set_style_text_color(lbl_fix, lv_color_hex(BAND_TEXT), 0);
@@ -259,13 +293,30 @@ void ui_create(void) {
   lv_label_set_text(lbl_pos, "kein Fix");
 }
 
+/*
+ * ui_update(s) - ingest a new measurement snapshot and update the display.
+ *
+ * Parameters:
+ *   s - pointer to the current ui_state_t (limit, speed, fix, position,
+ *       reason, mode flags). Not retained beyond this call.
+ *
+ * Runs at the data rate (5Hz on the device). Computes what SHOULD be shown
+ * (fill-bar target, colors, digit/pictogram, reason text, status lines) and
+ * only actually touches an LVGL widget when the new value differs from what
+ * was last drawn (the various shown_* statics) - see the "only redraw on
+ * real change" comment further down for why that matters. The fill bar
+ * itself is not animated here; it only gets a new target. The actual easing
+ * toward that target happens in ui_tick(), which must be called on every
+ * loop iteration regardless of the data rate.
+ */
 void ui_update(const ui_state_t *s) {
   char buf[48];
 
   bool has_ref = (s->limit > 0 && s->limit != 255);
 
-  // Fuellstand: gefahrenes Tempo im Verhaeltnis zum Limit. Hier nur das Ziel
-  // setzen - gezeichnet wird in ui_tick(), sonst ruckelt es im Datentakt.
+  // Fill level: driven speed relative to the limit. Only sets the target
+  // here - actual drawing happens in ui_tick(), otherwise it would step at
+  // the data rate.
   arc_target = 0.0f;
   if (has_ref && s->speed_kmh > 0) {
     arc_target = 1000.0f * s->speed_kmh / (float)s->limit;
@@ -273,29 +324,30 @@ void ui_update(const ui_state_t *s) {
   }
 
   /*
-   * "Zu schnell" entscheidet der Aufrufer, nicht diese Datei.
+   * "Too fast" is decided by the caller, not by this file.
    *
-   * Grund ist die Blende: sie haelt Limit und Begruendung zurueck, bis das
-   * Hintergrundlicht unten ist. Wuerde die Farbe hier aus dem Tempo berechnet,
-   * kippte sie schon waehrend der Abwaertsrampe auf Rot - sichtbar, weil das
-   * Panel da noch leuchtet. Der Aufrufer haelt deshalb alle drei Werte
-   * gemeinsam zurueck.
+   * Reason: the fade. It holds back the limit and reason text until the
+   * backlight is fully down. If the color were computed from speed here
+   * instead, it would flip to red already during the dim-down ramp -
+   * visible, because the panel is still lit at that point. So the caller
+   * holds back all three values together.
    */
   bool over = has_ref && s->over && !s->speedo;
 
   /*
-   * Faerbt die Begruendung die Flaeche? Orientiert an der Farbe des echten
-   * Verkehrszeichens. Wo ein farbiges Schild gilt, ist die Darstellung immer
-   * "Flaeche farbig, Schrift weiss" - OVER_STYLE_INVERT betrifft nur den
-   * normalen weissen Fall.
+   * Does the reason color the whole area? Modeled on the color of the real
+   * traffic sign. Wherever a colored sign applies, the rendering is always
+   * "area colored, text white" - OVER_STYLE_INVERT only affects the normal
+   * white case.
    */
   uint32_t sign = 0;
   if (has_ref && !s->speedo) {
     switch (s->reason) {
-      // Beide Schilder sind in echt blau: Zeichen 244.1 (Fahrradstrasse)
-      // und Zeichen 325.1 (verkehrsberuhigter Bereich).
-      case UI_REASON_RAD:
-      case UI_REASON_SPIEL: sign = COL_BLUE; break;
+      // Both signs are genuinely blue in real life: Zeichen 244.1
+      // (bicycle street) and Zeichen 325.1 (play street / traffic-calmed
+      // area).
+      case UI_REASON_BICYCLE_STREET:
+      case UI_REASON_PLAY_STREET: sign = COL_BLUE; break;
       default: break;
     }
   }
@@ -304,8 +356,8 @@ void ui_update(const ui_state_t *s) {
   uint32_t fg = sign ? COL_WHITE : COL_INK;
   uint32_t arc_col = sign ? sign : COL_RED;
 
-  // Zu schnell schlaegt die Schildfarbe: eine Warnung darf nicht mehrdeutig
-  // sein. Deshalb wird die Flaeche rot, egal welches Schild sonst gilt.
+  // "Too fast" overrides the sign color: a warning must never be ambiguous.
+  // So the area turns red regardless of which sign would otherwise apply.
   if (over) {
 #if OVER_STYLE_INVERT
     bg = COL_RED;
@@ -318,32 +370,32 @@ void ui_update(const ui_state_t *s) {
 #endif
   }
   /*
-   * Fahrrad- und Spielstrasse bekommen das Piktogramm des echten Schildes
-   * anstelle der Ziffer. Das Tempo rutscht dann nach unten an die Stelle der
-   * Beschriftung - bei 7 km/h als Wort, weil "Schrittgeschwindigkeit" die
-   * gemeinte Aussage ist und nicht die Zahl.
+   * Bicycle-street and play-street get the real sign's pictogram instead of
+   * the digit. The speed then moves down into the reason-label slot - shown
+   * as the word "SCHRITT" (walking pace) at 7km/h, because "walking pace"
+   * is the actual meaning intended, not the number.
    */
   uint8_t picto = 0;
   if (has_ref && !s->speedo) {
-    if (s->reason == UI_REASON_RAD) picto = 1;
-    else if (s->reason == UI_REASON_SPIEL) picto = 2;
+    if (s->reason == UI_REASON_BICYCLE_STREET) picto = 1;
+    else if (s->reason == UI_REASON_PLAY_STREET) picto = 2;
   }
 
   const lv_font_t *num_font;
   char num_txt[8];
   if (picto) {
     num_font = FONT_2DIGIT;
-    num_txt[0] = '\0';          // die Ziffer weicht dem Piktogramm
+    num_txt[0] = '\0';          // the digit yields to the pictogram
   } else if (s->speedo) {
     /*
-     * Tachomodus: nur das gefahrene Tempo, sonst nichts. Keine Beschriftung,
-     * kein Piktogramm, keine Faerbung - das gehoert zum Schild, nicht zum
-     * Tacho. Einzig der Balken bleibt auf das Limit skaliert, damit sichtbar
-     * ist, wieviel der erlaubten Geschwindigkeit ausgeschoepft wird.
+     * Speedometer mode: only the driven speed, nothing else. No reason
+     * label, no pictogram, no coloring - those belong to the sign, not the
+     * speedometer. Only the fill bar stays scaled to the limit, so it's
+     * still visible how much of the allowed speed is being used.
      *
-     * Tabellenziffern: die Zahl wechselt hier staendig, und mit den sonst
-     * verwendeten proportionalen Ziffern springt sie seitlich, weil die 1
-     * halb so breit ist wie die uebrigen.
+     * Tabular figures: the number keeps changing here, and with the
+     * proportional digits used elsewhere it would jitter sideways, since
+     * "1" is half as wide as the other digits.
      */
     int v = (int)(s->speed_kmh + 0.5f);
     if (v > 999) v = 999;
@@ -352,7 +404,7 @@ void ui_update(const ui_state_t *s) {
   } else if (s->limit == 255) {
     num_font = FONT_3DIGIT;
     snprintf(num_txt, sizeof(num_txt), "frei");
-    fg = COL_GREY;   // "unbegrenzt" kennt kein zu schnell
+    fg = COL_GREY;   // "unrestricted" has no concept of "too fast"
   } else if (s->limit > 0) {
     num_font = s->limit >= 100 ? FONT_3DIGIT : FONT_2DIGIT;
     snprintf(num_txt, sizeof(num_txt), "%d", s->limit);
@@ -362,15 +414,16 @@ void ui_update(const ui_state_t *s) {
     fg = COL_GREY;
   }
   /*
-   * Beschriftung darunter: nur was dem Fahrer etwas sagt. Das Einzelschild
-   * ist der Normalfall und bleibt stumm, ebenso "ohne Angabe" - das waeren
-   * zusammen ueber drei Viertel aller Strassen. Bei "frei" und "?" gibt es
-   * nichts zu begruenden, deshalb haengt es an has_ref.
+   * Reason label below the digit: only shown when it actually tells the
+   * driver something. A plain sign is the ordinary case and stays silent,
+   * as does "no data" - together those are over three quarters of all
+   * roads. For "frei" (unrestricted) and "?" (unknown) there is nothing to
+   * give a reason for, hence this is gated on has_ref.
    */
   char why_buf[12];
   const char *why = "";
   if (s->speedo) {
-    why = "";                 // im Tacho steht unter der Zahl nichts
+    why = "";                 // speedometer mode shows nothing below the number
   } else if (picto) {
     if (s->limit == 7) {
       snprintf(why_buf, sizeof(why_buf), "SCHRITT");
@@ -380,25 +433,26 @@ void ui_update(const ui_state_t *s) {
     why = why_buf;
   } else if (has_ref) {
     switch (s->reason) {
-      case UI_REASON_ZONE:   why = "ZONE"; break;
-      case UI_REASON_KINDER: why = "KINDER"; break;
-      case UI_REASON_SPIEL:  why = "SPIEL"; break;
-      // "FAHRRAD" waere 185 px breit, an dieser Stelle sind 171 px frei.
-      // Bleibt kurz, bis das Piktogramm es ersetzt.
-      case UI_REASON_RAD:    why = "RAD"; break;
-      case UI_REASON_ZEIT:   why = "ZEIT"; break;
+      case UI_REASON_ZONE:            why = "ZONE"; break;
+      case UI_REASON_CHILDREN:        why = "KINDER"; break;
+      case UI_REASON_PLAY_STREET:     why = "SPIEL"; break;
+      // "FAHRRAD" would be 185px wide, but only 171px are free at this
+      // spot. Kept short until the pictogram takes over.
+      case UI_REASON_BICYCLE_STREET:  why = "RAD"; break;
+      case UI_REASON_TIME_LIMITED:    why = "ZEIT"; break;
       default: break;
     }
   }
   /*
-   * Ab hier nur zeichnen, was sich wirklich geaendert hat.
+   * From here on, only draw what actually changed.
    *
-   * Der Grund ist die Groesse: eine 197-px-Ziffer ist rund 147x142 px, die
-   * jedes Mal neu gerastert und uebertragen wuerde. Bei 5 Hz Datentakt waere
-   * das fuenfmal pro Sekunde derselbe Inhalt - und genau diese unnoetige
-   * Vollflaeche laesst den Fuellbalken stocken, weil sie sich die
-   * Uebertragungszeit mit ihm teilt. Limit und Farbe wechseln in der Praxis
-   * alle paar Sekunden, nicht fuenfmal pro Sekunde.
+   * The reason is size: a 197px digit is roughly 147x142px, and would
+   * otherwise be re-rasterized and re-transferred every single call. At a
+   * 5Hz data rate that would mean the same content five times a second -
+   * and that unnecessary full-area transfer is exactly what stalls the
+   * fill bar, since they share the same transfer bandwidth. In practice,
+   * limit and color only change every few seconds, not five times a
+   * second.
    */
   static char shown_num[8] = "";
   static char shown_why[12] = "";
@@ -422,8 +476,8 @@ void ui_update(const ui_state_t *s) {
 
   if (bg != shown_bg || fg != shown_fg || arc_col != shown_arc) {
 #if FADE_MODE == 1
-    // Vom aktuell gezeigten Stand aus starten, nicht vom letzten Ziel -
-    // sonst springt es, wenn mitten in der Ueberblendung neu gewechselt wird.
+    // Start from what's currently shown, not from the last target -
+    // otherwise switching again mid-crossfade would jump.
     col_from_bg = (col_prog >= 1.0f) ? shown_bg : mix(col_from_bg, col_to_bg, col_prog);
     col_from_fg = (col_prog >= 1.0f) ? shown_fg : mix(col_from_fg, col_to_fg, col_prog);
     col_from_arc = (col_prog >= 1.0f) ? shown_arc : mix(col_from_arc, col_to_arc, col_prog);
@@ -434,14 +488,15 @@ void ui_update(const ui_state_t *s) {
     col_prog = 0.0f;
 #else
     pend_bg = bg; pend_fg = fg; pend_arc = arc_col; pend_colors = true;
-    if (!fade_active) applyColors();   // ohne Ziffernwechsel sofort
+    if (!fade_active) applyColors();   // no number change in flight: apply immediately
 #endif
     shown_bg = bg;
     shown_fg = fg;
     shown_arc = arc_col;
   }
-  // Ziffer nach oben ruecken, wenn darunter etwas steht, plus die optische
-  // Korrektur des jeweiligen Fonts (LVGL zentriert den Kasten, nicht die Ziffer)
+  // Nudge the digit upward when there's a reason label underneath it, plus
+  // the optical correction for whichever font is active (LVGL centers the
+  // text box, not the glyph).
   int opt = (num_font == FONT_3DIGIT || num_font == FONT_3DIGIT_T)
                 ? NUM_OPT_3DIGIT
                 : NUM_OPT_2DIGIT;
@@ -468,9 +523,9 @@ void ui_update(const ui_state_t *s) {
     shown_shift = shift;
   }
   /*
-   * Unter dem Piktogramm steht das Tempo - das soll gross sein, nicht so
-   * klein wie ein Wort. Deshalb eigener Schriftgrad, und die Beschriftung
-   * sitzt dort hoeher, weil das Piktogramm flacher ist als die Ziffer.
+   * The speed is shown below the pictogram - it should read large, not as
+   * small as a word. Hence its own font size, and it sits higher than the
+   * text label would because the pictogram is shorter than the digit.
    */
   bool picnum = picto && why[0] >= '0' && why[0] <= '9';
   const lv_font_t *lab_font = picnum ? FONT_PICNUM : FONT_LABEL;
@@ -492,8 +547,8 @@ void ui_update(const ui_state_t *s) {
 
 
   /*
-   * Statuszeile 1: Tempo, Quelle mit Satellitenzahl, Ortszeit.
-   * Feste Feldbreiten, damit in Festbreitenschrift nichts wandert.
+   * Status line 1: speed, source with satellite count, local time.
+   * Fixed field widths so nothing shifts around in the monospace font.
    */
   const char *tag = s->demo ? "DEM" : (s->fix ? "FIX" : "...");
   if (s->time_valid) {
@@ -509,7 +564,7 @@ void ui_update(const ui_state_t *s) {
     lv_label_set_text(lbl_fix, buf);
   }
 
-  // Statuszeile 2: Position und Fahrtrichtung
+  // Status line 2: position and heading
   if (s->fix || s->demo) {
     if (s->course >= 0.0f) {
       snprintf(buf, sizeof(buf), "%.3f %.3f %3.0f", s->lat, s->lon, s->course);
@@ -527,13 +582,22 @@ void ui_update(const ui_state_t *s) {
 }
 
 /*
- * Bewegt die Anzeige auf die zuletzt gesetzten Werte zu. Gehoert in jeden
- * Schleifendurchlauf, direkt neben lv_timer_handler().
+ * ui_tick(dt_ms) - animate the display toward the values set by the last
+ * ui_update() call.
  *
- * lv_arc_set_value() invalidiert nur den geaenderten Kreisausschnitt, nicht
- * den ganzen Ring - haeufige kleine Schritte sind deshalb billiger als
- * seltene grosse. Der Vergleich mit arc_shown verhindert, dass bei
- * unveraendertem Wert ueberhaupt etwas angestossen wird.
+ * Parameters:
+ *   dt_ms - milliseconds elapsed since the previous ui_tick() call. A value
+ *           of 0 is a no-op (guards against a stray double call).
+ *
+ * Belongs in every loop iteration, right next to lv_timer_handler(). Eases
+ * the fill bar toward arc_target with a time-based exponential filter (so
+ * the animation looks the same regardless of call rate), and drives the
+ * pixel/color crossfade state machine when FADE_MODE == 1.
+ *
+ * lv_arc_set_value() only invalidates the changed arc segment, not the
+ * whole ring - frequent small steps are therefore cheaper than rare large
+ * ones. The comparison against arc_shown_ang additionally guarantees that
+ * an unchanged value never triggers a redraw at all.
  */
 void ui_tick(uint32_t dt_ms) {
   if (dt_ms == 0) return;
@@ -541,7 +605,7 @@ void ui_tick(uint32_t dt_ms) {
 
 #if FADE_MODE == 1
   if (fade_active) {
-    // Halbe Zeit raus, halbe rein
+    // Half the time fading out, half fading in
     float step = 255.0f * (float)dt_ms / (FADE_MS / 2.0f);
     if (fade_out) {
       fade_opa -= step;
@@ -551,8 +615,9 @@ void ui_tick(uint32_t dt_ms) {
         lv_label_set_text(lbl_limit, fade_pending);
         lv_obj_align(lbl_limit, LV_ALIGN_CENTER, 0, fade_shift);
 #if FADE_MODE != 1
-        // Farbe genau hier umschalten, wo die Ziffer unsichtbar ist: beides
-        // faellt in denselben Neuaufbau statt in zwei aufeinanderfolgende.
+        // Switch the color at exactly this point, where the digit is
+        // invisible: both changes land in the same redraw instead of two
+        // consecutive ones.
         applyColors();
 #endif
         fade_out = false;
@@ -587,10 +652,11 @@ void ui_tick(uint32_t dt_ms) {
   if (fabsf(arc_target - arc_value) < 0.5f) arc_value = arc_target;
 
   /*
-   * Winkel direkt setzen statt ueber lv_arc_set_value(): dessen Wertebereich
-   * 0..1000 wird intern auf ganze Grad abgebildet, und 1 Grad sind hier
-   * 2,8 px Bogenlaenge - der Balken kann damit gar nicht fluessig laufen.
-   * Mit LV_USE_FLOAT = 1 nimmt lv_arc_set_angles() Bruchteile von Grad an.
+   * Set the angle directly instead of via lv_arc_set_value(): that
+   * function's 0..1000 range gets mapped internally to whole degrees, and
+   * one degree here is 2.8px of arc length - the bar could never move
+   * smoothly through that. With LV_USE_FLOAT = 1, lv_arc_set_angles()
+   * accepts fractional degrees instead.
    */
   float ang = ARC_START + (arc_value / 1000.0f) * (float)(ARC_END - ARC_START);
   if (fabsf(ang - arc_shown_ang) >= 0.15f) {

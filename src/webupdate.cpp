@@ -1,6 +1,6 @@
 /*
- * webupdate.cpp - siehe webupdate.h und den Abschnitt "KARTEN-UPDATE UEBER
- * WLAN" in config.h fuer die Begruendung.
+ * webupdate.cpp - see webupdate.h and the "MAP UPDATES OVER WI-FI" section
+ * in config.h for the rationale.
  */
 
 #include "webupdate.h"
@@ -19,22 +19,32 @@ static uint32_t ap_deadline_ms = 0;
 static bool hold_active = false;
 static uint32_t hold_start_ms = 0;
 
-// Zustand des gerade laufenden Uploads - der WebServer ruft den
-// Chunk-Handler mehrfach auf, bevor der eigentliche Antwort-Handler drankommt.
+// State of the upload currently in progress - the WebServer calls the
+// chunk handler multiple times before the actual response handler runs.
 static File upload_file;
 static String upload_pending_path;
 static String upload_error;
 static bool upload_ok = false;
 
 struct RegionEntry {
-  String name;   // Basisname ohne Endung, z.B. "berlin"
+  String name;   // base name without extension, e.g. "berlin"
   size_t bytes;
 };
 
 // ---------------------------------------------------------------------------
-// Hilfsfunktionen
+// Helper functions
 // ---------------------------------------------------------------------------
 
+/*
+ * basenameOf(path) - strip any directory prefix and return just the file
+ * name.
+ *
+ * Parameters:
+ *   path - a path that may use '/' or '\' as separator
+ *
+ * Handles both separators because the upload's filename comes from the
+ * browser/OS the user is on, which may be Windows.
+ */
 static String basenameOf(const String &path) {
   int cut = path.lastIndexOf('/');
   int cut2 = path.lastIndexOf('\\');
@@ -42,6 +52,16 @@ static String basenameOf(const String &path) {
   return cut >= 0 ? path.substring(cut + 1) : path;
 }
 
+/*
+ * htmlEscape(s) - escape &, < and > for safe inclusion in HTML output.
+ *
+ * Parameters:
+ *   s - the raw string to escape
+ *
+ * Region names are constrained by validRegionName() and shouldn't contain
+ * these characters anyway, but escaping here is cheap insurance against
+ * anything unexpected ending up in region-derived filenames.
+ */
 static String htmlEscape(const String &s) {
   String o;
   o.reserve(s.length());
@@ -55,9 +75,16 @@ static String htmlEscape(const String &s) {
   return o;
 }
 
-// Nur Buchstaben, Ziffern, _ und - erlaubt: schliesst Pfadtricks aus und
-// bleibt auf jedem Dateisystem unproblematisch (heute LittleFS, siehe
-// backlog.md Punkt 5 fuer SD als moeglichen Nachfolger).
+/*
+ * validRegionName(n) - check whether n is a safe region name.
+ *
+ * Parameters:
+ *   n - candidate region name (without extension)
+ *
+ * Only letters, digits, '_' and '-' are allowed: this rules out path
+ * tricks and stays uncontroversial on any filesystem (LittleFS today, see
+ * backlog.md item 5 for SD as a possible successor).
+ */
 static bool validRegionName(const String &n) {
   if (n.isEmpty() || n.length() > 40) return false;
   for (size_t i = 0; i < n.length(); i++) {
@@ -67,9 +94,20 @@ static bool validRegionName(const String &n) {
   return true;
 }
 
-// Listet Dateien eines Ordners, deren Name auf 'suffix' endet, und liefert
-// den Namen ohne dieses Suffix zurueck. Dient sowohl fuer GRID_DIR (Suffix
-// ".msg") als auch fuer PENDING_DIR (zusaetzlich ".msg.del"-Marker).
+/*
+ * listDir(fs, dir, suffix, out, maxOut) - list files in a directory whose
+ * name ends in 'suffix', returning the name with that suffix stripped.
+ *
+ * Parameters:
+ *   fs     - filesystem to read from
+ *   dir    - directory path to scan (not recursive)
+ *   suffix - required filename suffix, stripped from the returned name
+ *   out    - destination array of RegionEntry
+ *   maxOut - capacity of out
+ *
+ * Serves both GRID_DIR (suffix ".msg") and PENDING_DIR (also used with the
+ * ".msg.del" marker suffix). Returns the number of entries written.
+ */
 static int listDir(fs::FS &fs, const char *dir, const char *suffix,
                    RegionEntry *out, int maxOut) {
   int n = 0;
@@ -92,11 +130,24 @@ static int listDir(fs::FS &fs, const char *dir, const char *suffix,
   return n;
 }
 
-// Regionsnamen, die nach Anwenden aller vorgemerkten Aenderungen uebrig
-// blieben - dieselbe Logik wie applyPendingMapChanges(), nur ohne etwas
-// anzufassen. Dient der Anzeige und der MAX_REGIONS-Pruefung beim Upload.
+// Region names left over after applying all staged changes - the same
+// logic as applyPendingMapChanges(), just without touching anything.
+// Used for the status display and the MAX_REGIONS check on upload.
 #define PENDING_ARR_MAX 20
 
+/*
+ * effectiveNames(fs, out, maxOut) - compute the region names that would be
+ * installed if all currently staged changes were applied right now.
+ *
+ * Parameters:
+ *   fs     - filesystem to read from
+ *   out    - destination array of region name strings
+ *   maxOut - capacity of out
+ *
+ * Starts from the installed regions in GRID_DIR, drops any with a pending
+ * ".msg.del" marker, then adds any pending ".msg" replacements/new regions
+ * not already counted. Returns the resulting count.
+ */
 static int effectiveNames(fs::FS &fs, String out[], int maxOut) {
   RegionEntry installed[PENDING_ARR_MAX], added[PENDING_ARR_MAX],
       removed[PENDING_ARR_MAX];
@@ -120,16 +171,27 @@ static int effectiveNames(fs::FS &fs, String out[], int maxOut) {
   return cnt;
 }
 
+/*
+ * applyPendingMapChanges(fs) - apply changes staged in PENDING_DIR (new/
+ * replaced regions, deletion markers) to GRID_DIR.
+ *
+ * Parameters:
+ *   fs - the already-mounted filesystem to operate on
+ *
+ * Must run before SpeedLimitGrid::begin(), and specifically before any
+ * file handle on a region file is open - that's exactly why changes made
+ * through the web UI only take effect after a restart.
+ */
 void applyPendingMapChanges(fs::FS &fs) {
   if (!fs.exists(PENDING_DIR)) return;
-  // Auf einem frisch geflashten Geraet, das noch nie "uploadfs" gesehen hat,
-  // gibt es GRID_DIR unter Umstaenden noch gar nicht - ohne das wuerde das
-  // Uebernehmen unten stillschweigend fehlschlagen.
+  // On a freshly flashed device that has never seen "uploadfs", GRID_DIR
+  // may not exist yet - without this, the apply step below would fail
+  // silently.
   if (!fs.exists(GRID_DIR)) fs.mkdir(GRID_DIR);
 
-  // Erst alle Namen einsammeln, dann erst aendern - waehrend der Iteration
-  // eines Verzeichnisses gleichzeitig Dateien darin umzubenennen oder zu
-  // loeschen ist nicht garantiert sauber.
+  // Collect all names first, then apply changes - renaming or deleting
+  // files in a directory while iterating it at the same time is not
+  // guaranteed to be safe.
   String names[PENDING_ARR_MAX];
   int n = 0;
   {
@@ -150,20 +212,20 @@ void applyPendingMapChanges(fs::FS &fs) {
       String target = String(GRID_DIR) + "/" + base + ".msg";
       if (fs.exists(target)) {
         fs.remove(target);
-        Serial.printf("[Update] %s geloescht\n", target.c_str());
+        Serial.printf("[Update] %s deleted\n", target.c_str());
       }
       fs.remove(full);
     } else if (names[i].endsWith(".msg")) {
       String target = String(GRID_DIR) + "/" + names[i];
       if (fs.exists(target)) fs.remove(target);
       if (fs.rename(full, target)) {
-        Serial.printf("[Update] %s uebernommen\n", target.c_str());
+        Serial.printf("[Update] %s applied\n", target.c_str());
       } else {
-        Serial.printf("[Update] %s konnte nicht uebernommen werden\n",
+        Serial.printf("[Update] %s could not be applied\n",
                       target.c_str());
       }
     } else {
-      Serial.printf("[Update] unerwartete Datei %s in %s, geloescht\n",
+      Serial.printf("[Update] unexpected file %s in %s, deleted\n",
                     names[i].c_str(), PENDING_DIR);
       fs.remove(full);
     }
@@ -171,9 +233,21 @@ void applyPendingMapChanges(fs::FS &fs) {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP-Handler
+// HTTP handlers
 // ---------------------------------------------------------------------------
 
+/*
+ * handleUploadChunk() - WebServer upload callback, invoked repeatedly as
+ * multipart chunks of an incoming .msg file arrive.
+ *
+ * Runs through UPLOAD_FILE_START / _WRITE / _END / _ABORTED. On START it
+ * validates the filename and available space and opens a file in
+ * PENDING_DIR; on WRITE it streams bytes to that file; on END it checks
+ * the "MSG2" magic and marks the upload as ready for the next restart; on
+ * ABORTED it cleans up the partial file. All user-visible outcomes are
+ * left in upload_error/upload_ok for handleUploadDone() to report once the
+ * response handler runs.
+ */
 static void handleUploadChunk() {
   HTTPUpload &up = server.upload();
 
@@ -203,9 +277,10 @@ static void handleUploadChunk() {
     }
 
     if (upload_error.isEmpty()) {
-      // clientContentLength() ist die Groesse der ganzen Anfrage inklusive
-      // multipart-Rahmen, also eine Obergrenze, keine exakte Dateigroesse -
-      // genau deshalb der Sicherheitsabstand AP_FREE_MARGIN_BYTES.
+      // clientContentLength() is the size of the whole request including
+      // the multipart framing, so it's an upper bound, not the exact file
+      // size - which is exactly why AP_FREE_MARGIN_BYTES exists as a
+      // safety margin.
       int need = server.clientContentLength();
       size_t free_bytes = LittleFS.totalBytes() - LittleFS.usedBytes();
       if (need > 0 && (size_t)need + AP_FREE_MARGIN_BYTES > free_bytes) {
@@ -223,9 +298,9 @@ static void handleUploadChunk() {
     }
 
     if (!upload_error.isEmpty()) {
-      Serial.printf("[Update] Upload abgelehnt: %s\n", upload_error.c_str());
+      Serial.printf("[Update] upload rejected: %s\n", upload_error.c_str());
     } else {
-      Serial.printf("[Update] Upload beginnt: %s\n", base.c_str());
+      Serial.printf("[Update] upload starting: %s\n", base.c_str());
     }
 
   } else if (up.status == UPLOAD_FILE_WRITE) {
@@ -240,8 +315,8 @@ static void handleUploadChunk() {
   } else if (up.status == UPLOAD_FILE_END) {
     if (upload_file) upload_file.close();
     if (upload_error.isEmpty()) {
-      // Dieselbe Kennungspruefung wie SpeedLimitGrid::loadRegion() beim
-      // echten Laden - nur eben vorher statt hinterher.
+      // Same magic-number check as SpeedLimitGrid::loadRegion() performs
+      // on the real load - just up front here instead of afterwards.
       File f = LittleFS.open(upload_pending_path, FILE_READ);
       uint8_t magic[4] = {0};
       bool okmagic = f && f.read(magic, 4) == 4 && memcmp(magic, "MSG2", 4) == 0;
@@ -251,7 +326,7 @@ static void handleUploadChunk() {
         LittleFS.remove(upload_pending_path);
       } else {
         upload_ok = true;
-        Serial.printf("[Update] %s wartet auf Neustart (%u Byte)\n",
+        Serial.printf("[Update] %s waiting for restart (%u bytes)\n",
                       upload_pending_path.c_str(), (unsigned)up.totalSize);
       }
     }
@@ -263,6 +338,14 @@ static void handleUploadChunk() {
   }
 }
 
+/*
+ * handleUploadDone() - WebServer response handler for POST /upload, called
+ * once after handleUploadChunk() has processed all chunks.
+ *
+ * Reports the outcome left behind by handleUploadChunk() in upload_ok /
+ * upload_error as a plain-text HTTP response, which the page's JS reads
+ * from XMLHttpRequest.responseText to update the status line.
+ */
 static void handleUploadDone() {
   if (upload_ok) {
     server.send(200, "text/plain; charset=utf-8", "OK");
@@ -272,6 +355,14 @@ static void handleUploadDone() {
   }
 }
 
+/*
+ * handleDelete() - GET /delete?name=... handler, stages a region for
+ * deletion.
+ *
+ * Doesn't touch GRID_DIR directly (see applyPendingMapChanges() for why);
+ * it only drops an empty "<name>.msg.del" marker file in PENDING_DIR and
+ * redirects back to the status page.
+ */
 static void handleDelete() {
   String name = server.arg("name");
   if (!validRegionName(name)) {
@@ -282,11 +373,23 @@ static void handleDelete() {
   String marker = String(PENDING_DIR) + "/" + name + ".msg.del";
   File f = LittleFS.open(marker, FILE_WRITE);
   if (f) f.close();
-  Serial.printf("[Update] Loeschung von %s vorgemerkt\n", name.c_str());
+  Serial.printf("[Update] deletion of %s staged\n", name.c_str());
   server.sendHeader("Location", "/");
   server.send(303);
 }
 
+/*
+ * handleCancel() - GET /cancel?name=...&kind=... handler, discards a
+ * staged change before it's applied.
+ *
+ * Parameters (via query string):
+ *   name - region name
+ *   kind - "del" to discard a pending deletion marker, anything else to
+ *          discard a pending upload/replacement
+ *
+ * Just removes the corresponding file from PENDING_DIR; nothing in
+ * GRID_DIR is ever touched by this path.
+ */
 static void handleCancel() {
   String name = server.arg("name");
   String kind = server.arg("kind");
@@ -297,18 +400,35 @@ static void handleCancel() {
   String path =
       String(PENDING_DIR) + "/" + name + (kind == "del" ? ".msg.del" : ".msg");
   if (LittleFS.exists(path)) LittleFS.remove(path);
-  Serial.printf("[Update] vorgemerkte Aenderung an %s verworfen\n",
+  Serial.printf("[Update] staged change to %s discarded\n",
                name.c_str());
   server.sendHeader("Location", "/");
   server.send(303);
 }
 
+/*
+ * handleRestart() - POST /restart handler, reboots the device so staged
+ * map changes take effect.
+ *
+ * The short delay() lets the HTTP response actually reach the client
+ * before the connection is torn down by ESP.restart().
+ */
 static void handleRestart() {
   server.send(200, "text/plain; charset=utf-8", "Starte neu ...");
-  delay(300);   // Antwort noch rausschreiben, bevor die Verbindung abreisst
+  delay(300);   // let the response finish writing out before the connection drops
   ESP.restart();
 }
 
+/*
+ * handleRoot() - GET / handler, renders the map-management status page.
+ *
+ * Builds one self-contained HTML document (inline CSS/JS, no external
+ * requests) showing storage usage, installed/staged regions with
+ * install/replace/delete actions, an upload form, and a restart button.
+ * The page text itself is intentionally German - this is user-facing UI
+ * on the setup web page, not a developer log, so it follows the same rule
+ * as the on-device display strings.
+ */
 static void handleRoot() {
   RegionEntry installed[PENDING_ARR_MAX], added[PENDING_ARR_MAX],
       removed[PENDING_ARR_MAX];
@@ -381,7 +501,7 @@ static void handleRoot() {
     bool isNew = true;
     for (int j = 0; j < ni; j++)
       if (installed[j].name == added[i].name) { isNew = false; break; }
-    if (!isNew) continue;   // steht oben schon als "wird ersetzt"
+    if (!isNew) continue;   // already listed above as "wird ersetzt"
     html += "<tr><td>" + htmlEscape(added[i].name) + "</td><td>" +
             String(added[i].bytes / 1024) + " KiB</td><td>neu (nach Neustart)"
             "</td><td><a class=\"del\" href=\"/cancel?kind=new&amp;name=" +
@@ -433,14 +553,22 @@ static void handleRoot() {
 }
 
 // ---------------------------------------------------------------------------
-// Access Point
+// Access point
 // ---------------------------------------------------------------------------
 
+/*
+ * startAP() - bring up the Wi-Fi access point and register HTTP routes.
+ *
+ * Opens an unsecured AP (see config.h for why a passwordless AP is a
+ * deliberate choice) under AP_SSID, wires up all route handlers, and
+ * starts the idle-timeout countdown so the AP shuts itself down again if
+ * nobody connects.
+ */
 static void startAP() {
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID);   // Passphrase NULL = offen, siehe config.h
+  WiFi.softAP(AP_SSID);   // NULL passphrase = open, see config.h
   IPAddress ip = WiFi.softAPIP();
-  Serial.printf("[Update] AP \"%s\" gestartet, http://%s/\n", AP_SSID,
+  Serial.printf("[Update] AP \"%s\" started, http://%s/\n", AP_SSID,
                ip.toString().c_str());
 
   server.on("/", HTTP_GET, handleRoot);
@@ -458,19 +586,41 @@ static void startAP() {
   ap_deadline_ms = millis() + AP_IDLE_TIMEOUT_MS;
 }
 
+/*
+ * stopAP() - tear down the access point and web server.
+ *
+ * Called once the idle timeout elapses with nobody connected, so the
+ * device doesn't keep burning power on Wi-Fi while parked.
+ */
 static void stopAP() {
-  Serial.println("[Update] AP ohne Verbindung - abgeschaltet");
+  Serial.println("[Update] AP idle with no connection - shutting down");
   server.stop();
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_OFF);
   ap_running = false;
 }
 
+/*
+ * webupdateBegin() - start the access point and web UI.
+ *
+ * Thin wrapper kept separate from startAP() so the public entry point
+ * stays stable even if the internal bring-up logic grows.
+ */
 void webupdateBegin() { startAP(); }
 
+/*
+ * webupdateLoop() - service the access point and web server; call from
+ * every loop() iteration.
+ *
+ * Watches DEMO_PIN for a long hold to restart the AP on demand (see
+ * backlog.md item 1 and the rationale at AP_HOLD_TRIGGER_MS), services
+ * pending HTTP requests while the AP is up, and restarts the idle-timeout
+ * countdown for as long as at least one station stays connected before
+ * shutting the AP down via stopAP().
+ */
 void webupdateLoop() {
-  // DEMO_PIN 10 s gehalten startet den AP erneut, falls er schon aus ist -
-  // siehe backlog.md Punkt 1 und die Begruendung bei AP_HOLD_TRIGGER_MS.
+  // Holding DEMO_PIN for 10s restarts the AP if it's currently off - see
+  // backlog.md item 1 and the rationale at AP_HOLD_TRIGGER_MS.
   bool held = (digitalRead(DEMO_PIN) == LOW);
   if (held) {
     if (!hold_active) {
@@ -488,8 +638,8 @@ void webupdateLoop() {
   server.handleClient();
 
   if (WiFi.softAPgetStationNum() > 0) {
-    // Verbindung haelt den AP am Leben und startet die Abschaltfrist bei
-    // jeder Pruefung neu - siehe AP_IDLE_TIMEOUT_MS in config.h.
+    // A connection keeps the AP alive and restarts the shutdown countdown
+    // on every check - see AP_IDLE_TIMEOUT_MS in config.h.
     ap_deadline_ms = millis() + AP_IDLE_TIMEOUT_MS;
   } else if (millis() > ap_deadline_ms) {
     stopAP();

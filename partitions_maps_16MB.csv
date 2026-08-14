@@ -1,28 +1,27 @@
-# Partitionstabelle fuer die Tempolimit-Anzeige, 16 MB Flash.
+# Partition table for the speed-limit display, 16 MB flash.
 #
-# Ziel: moeglichst viel Platz fuer Kartendaten. Gegenueber
-# large_spiffs_16MB.csv (4,5 MiB je App-Slot, 6,875 MiB FS) schrumpft der
-# App-Bereich und das Dateisystem waechst auf 12,875 MiB.
+# Goal: as much room as possible for map data. Compared to
+# large_spiffs_16MB.csv (4.5 MiB per app slot, 6.875 MiB FS), the app area
+# shrinks and the filesystem grows to 12.875 MiB.
 #
-# Ein einziger "factory"-Slot statt app0/app1+otadata: OTA wird im Projekt
-# nicht genutzt, ein zweiter (nie beschriebener) App-Slot war also reine
-# Verschwendung. Seit webupdate.h/.cpp (Kartenupdate per Access Point,
-# WiFi+WebServer) braucht die Firmware selbst deutlich mehr Platz - gemessen
-# 1,43 MiB, mit den alten 1,5 MiB je Slot waeren das 95,1 % und praktisch
-# keine Reserve mehr. Der eine factory-Slot fasst dafuer 3 MiB, den doppelten
-# Platzbedarf mit Reserve.
+# A single "factory" slot instead of app0/app1+otadata: OTA isn't used in
+# this project, so a second (never-written) app slot was pure waste. Since
+# webupdate.h/.cpp (map updates over an access point, Wi-Fi + WebServer),
+# the firmware itself needs noticeably more room - measured at 1.43 MiB,
+# which at the old 1.5 MiB per slot would have been 95.1% with practically
+# no headroom left. The single factory slot instead holds 3 MiB, double the
+# space with margin.
 #
-# App-Partitionen muessen auf 0x10000 ausgerichtet sein, deshalb bleibt der
-# Offset bei 0x10000 wie zuvor bei app0 - das freigewordene otadata (0x2000)
-# geht stattdessen an nvs. Bewusst so aufgeteilt, dass sich am Ende des
-# App-Bereichs (0x310000) nichts aendert: die FS-Partition behaelt Offset und
-# Groesse von vorher. Wer schon eine Karte hochgeladen hat, muss nach dem
-# Umstieg auf diese Tabelle nicht neu "uploadfs" laufen lassen - nur die
-# Firmware selbst neu flashen.
+# App partitions have to be aligned to 0x10000, so the offset stays at
+# 0x10000 like the old app0 - the otadata space freed up (0x2000) goes to
+# nvs instead. Deliberately split so nothing changes at the end of the app
+# area (0x310000): the FS partition keeps its previous offset and size.
+# Anyone who has already uploaded a map doesn't need to re-run "uploadfs"
+# after switching to this table - just reflash the firmware itself.
 #
-# Die FS-Partition heisst "spiffs" und hat Subtype spiffs. Nicht umbenennen:
-# LittleFS.begin() mountet per Default genau dieses Label, und
-# "pio run -t uploadfs" sucht die letzte Data-Partition mit diesem Subtype.
+# The FS partition is named "spiffs" with subtype spiffs. Do not rename it:
+# LittleFS.begin() mounts exactly this label by default, and
+# "pio run -t uploadfs" looks for the last data partition with this subtype.
 #
 # Name,   Type, SubType,  Offset,   Size,     Flags
 nvs,      data, nvs,      0x9000,   0x7000,

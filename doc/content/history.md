@@ -454,3 +454,57 @@ Zwei Wege prophylaktisch durchgerechnet, beide **nicht umgesetzt**:
   schwerer als der Platzgewinn.
 
 Format bleibt MSG2 wie es ist. Nicht erneut pruefen, ohne einen neuen Grund.
+
+## 2026-08-14 — Code and script comments switched to English
+
+All hand-maintained code comments and function-header documentation are now
+English: firmware (`src/*.c`, `src/*.cpp`, `src/*.h`), the simulator
+(`sim/*.c`, `sim/CMakeLists.txt`), `platformio.ini`,
+`partitions_maps_16MB.csv`, and every `tools/*.py` script including all
+CLI help text, interactive prompts, and status/error output. Generated
+files (`src/lv_font_din_*.c`, `src/img_*.c`) were left untouched - they're
+machine output, not hand-maintained.
+
+Every function in these files now carries a header comment (what it does,
+what parameters it needs, how/why it works where that isn't obvious) that
+didn't exist in this form before. `CLAUDE.md` records a permanent rule
+that these headers and the rationale comments in `config.h` must not be
+stripped or shortened by a future cleanup pass - several of them exist
+specifically because a "cleaner" value was tried on real hardware and made
+things worse.
+
+**What stayed German on purpose:** everything actually shown to a person
+using the device or its setup web page - the on-device words `ZONE`,
+`KINDER`, `SPIEL`, `RAD`, `ZEIT`, `SCHRITT`, `frei`, `kein Fix`, and all
+HTML/JS text and HTTP messages in `webupdate.cpp`'s web UI. The device
+targets German roads and German road signs, so the display stays German.
+This file, `CLAUDE.md`, and the rest of `doc/content/` also stay German
+prose (only the language-policy paragraphs in `CLAUDE.md` were updated);
+`README.md` was already English and needed no change. Historical entries
+in this file are left exactly as written; only new entries from this date
+on are in English.
+
+**Identifier renames**, values unchanged, applied everywhere they occur
+(`ui.h`, `main.cpp`, `speedlimit_grid.h`, `tools/osm_to_grid.py`, plus the
+`REASON_*`/`DP_*` families local to `osm_to_grid.py`/`main.cpp`):
+`UI_REASON_KINDER`/`REASON_KINDER` -> `*_CHILDREN`,
+`UI_REASON_SPIEL`/`REASON_SPIEL` -> `*_PLAY_STREET`,
+`UI_REASON_RAD`/`REASON_RAD` -> `*_BICYCLE_STREET`,
+`REASON_SCHILD` -> `REASON_SIGN`, `UI_REASON_ZEIT`/`REASON_ZEIT` ->
+`*_TIME_LIMITED` (`*_ZONE`/`*_NONE` unchanged - already English words).
+`tools/png_to_lvgl.py`'s `--polarity hell/dunkel` flag values became
+`--polarity light/dark`, with `CLAUDE.md`'s example commands updated to
+match.
+
+**New config.h constants**, replacing duplicated/bare magic numbers found
+during the pass: `EARTH_M_PER_DEG_LAT` (was the literal `111320`,
+duplicated three times across `main.cpp` and `speedlimit_grid.h` for the
+same flat-earth latitude scale), `DEMO_SPEED_WOBBLE_PCT` /
+`DEMO_SPEED_WOBBLE_PERIOD_MS`, `UBX_CMD_DELAY_MS`, `GPS_STAT_INTERVAL_MS`,
+`GPS_TASK_POLL_MS`.
+
+Both builds verified afterward: `cmake -S sim -B build-sim && cmake
+--build build-sim -j` (simulator) and `pio run -e esp32s3` (firmware) -
+both succeed with no warnings introduced by this change. No logic or
+numeric behavior was changed anywhere in this pass; it is comments,
+function headers, identifier names, and magic-number consolidation only.

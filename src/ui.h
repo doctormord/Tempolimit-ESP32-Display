@@ -1,8 +1,8 @@
 /*
- * ui.h - Oberflaeche der Tempolimit-Anzeige (plattformunabhaengig)
+ * ui.h - the speed-limit display's UI surface (platform-independent)
  *
- * Dieselbe Datei laeuft im PC-Simulator (SDL) und auf dem ESP32.
- * Kein Arduino, kein GPS, keine SD-Karte hier drin - nur LVGL.
+ * The same file is compiled for both the PC simulator (SDL) and the ESP32.
+ * No Arduino, no GPS, no SD card in here - LVGL only.
  */
 
 #ifndef UI_H
@@ -16,53 +16,61 @@
 extern "C" {
 #endif
 
-#define UI_SIZE 360   // rundes Display 360x360
+#define UI_SIZE 360   // round display, 360x360
 
-// Alles, was die Anzeige braucht - in einer Struktur, damit Simulator und
-// Firmware denselben Aufruf benutzen.
+// Everything the display needs, bundled into one struct so the simulator
+// and the firmware go through the same call.
 typedef struct {
-  int limit;         // km/h, 255 = unbegrenzt, <=0 = unbekannt
-  float speed_kmh;   // gefahrenes Tempo
-  bool fix;          // GPS-Fix vorhanden
-  uint8_t sats;      // Satelliten
+  int limit;         // km/h, 255 = unrestricted, <=0 = unknown
+  float speed_kmh;   // driven speed
+  bool fix;          // GPS fix available
+  uint8_t sats;      // satellite count
   double lat, lon;
-  float course;      // Fahrtrichtung in Grad, <0 = unbekannt
-  uint8_t hour, minute, weekday;  // Ortszeit, weekday 0 = Montag
+  float course;      // heading in degrees, <0 = unknown
+  uint8_t hour, minute, weekday;  // local time, weekday 0 = Monday
   bool time_valid;
-  bool demo;         // simulierte Fahrt (kein GPS) - Statuszeile zeigt DEMO
-  uint8_t reason;    // warum gilt das Limit, UI_REASON_*
-  bool speedo;       // Tachomodus: Mitte zeigt Tempo statt Limit
-  bool over;         // zu schnell - vom Aufrufer entschieden, siehe ui.c
+  bool demo;         // simulated drive (no GPS) - status line shows DEMO
+  uint8_t reason;    // why the limit applies, UI_REASON_*
+  bool speedo;       // speedometer mode: center shows driven speed instead of limit
+  bool over;         // too fast - decided by the caller, see ui.c
 } ui_state_t;
 
 /*
- * Begruendung des Limits. Die Werte spiegeln REASON_* aus
- * tools/osm_to_grid.py und stecken dort in den unteren drei Bit des
- * flags-Byte jeder Kette - Reihenfolge also nicht aendern, ohne die
- * Kartendaten neu zu erzeugen.
+ * Reason the limit applies. These values mirror REASON_* in
+ * tools/osm_to_grid.py, where they're packed into the low three bits of
+ * each chain's flags byte - so do not change the order/values without
+ * regenerating the map data.
  *
- * Angezeigt wird nur, was dem Fahrer etwas sagt: SCHILD ist der Normalfall
- * und bleibt stumm, ebenso NONE.
+ * Only reasons that actually tell the driver something get displayed:
+ * SIGN is the ordinary case and stays silent, as does NONE.
+ *
+ * The identifiers below are English; the text actually shown on screen for
+ * each reason (see ui.c) stays German on purpose, since the device targets
+ * German roads and German road signs (ZONE, KINDER, SPIEL, RAD, ZEIT).
  */
 #define UI_REASON_NONE 0
-#define UI_REASON_ZONE 1     // Tempo-30-Zone
-#define UI_REASON_KINDER 2   // hazard=children, meist Schule/Kindergarten
-#define UI_REASON_SPIEL 3    // verkehrsberuhigter Bereich
-#define UI_REASON_RAD 4      // Fahrradstrasse
-#define UI_REASON_SCHILD 5   // Einzelschild
-#define UI_REASON_ZEIT 6     // nur zeitweise gueltig
+#define UI_REASON_ZONE 1        // 30 km/h traffic-calmed zone
+#define UI_REASON_CHILDREN 2    // hazard=children, usually a school/kindergarten
+#define UI_REASON_PLAY_STREET 3 // "verkehrsberuhigter Bereich" (walking-pace zone)
+#define UI_REASON_BICYCLE_STREET 4  // "Fahrradstrasse" (bicycle-priority street)
+#define UI_REASON_SIGN 5         // single explicit sign, no special category
+#define UI_REASON_TIME_LIMITED 6 // only in effect during certain hours
 
 void ui_create(void);
 
 /*
- * ui_update() uebernimmt neue Messwerte - also im Datentakt, bei uns 5 Hz.
- * ui_tick() bewegt die Anzeige darauf zu und gehoert in jeden Schleifen-
- * durchlauf, direkt neben lv_timer_handler(). Ohne diese Trennung springt
- * der Fuellbalken im Datentakt, also fuenfmal pro Sekunde sichtbar.
+ * ui_update() vs. ui_tick() - why there are two entry points:
  *
- * dt_ms ist die seit dem letzten ui_tick() vergangene Zeit. Die Glaettung
- * rechnet damit zeitbasiert und ist dadurch unabhaengig von der Aufrufrate -
- * Simulator und Geraet sehen gleich aus.
+ * ui_update() ingests new measurements, i.e. runs at the data rate (5Hz for
+ * us). ui_tick() animates the display toward those values and belongs in
+ * every loop iteration, right next to lv_timer_handler(). Without this
+ * split, the fill bar used to jump at the data rate - visibly five times a
+ * second.
+ *
+ * dt_ms is the time elapsed since the previous ui_tick() call. The
+ * smoothing is computed from that elapsed time, so it stays independent of
+ * how often this is called - the simulator and the real device end up
+ * looking the same.
  */
 void ui_update(const ui_state_t *s);
 void ui_tick(uint32_t dt_ms);

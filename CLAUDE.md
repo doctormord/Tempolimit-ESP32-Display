@@ -2,7 +2,39 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Kommentare, Doku und UI-Texte sind auf Deutsch — bitte beibehalten.
+**Sprachregel (Stand 2026-08-14, siehe `history.md`):** Code- und
+Skriptkommentare sind **Englisch** — Firmware (`src/*.c`, `src/*.cpp`,
+`src/*.h`), Simulator (`sim/*.c`) und alle `tools/*.py`, inklusive jeder
+CLI-Hilfe, Menüführung und Statusausgabe dieser Skripte. Grund: die
+Kommentare sind die eigentliche technische Dokumentation dieser Dateien
+(Messreihen, Sackgassen, Hardware-Eigenheiten), und Englisch ist die
+Sprache, in der das am ehesten wieder mitgelesen wird.
+
+**Ausnahmen bleiben Deutsch:**
+- **Text, der auf dem Geraet oder in der Setup-Weboberflaeche tatsaechlich
+  zu sehen ist** — die Woerter `ZONE`, `KINDER`, `SPIEL`, `RAD`, `ZEIT`,
+  `SCHRITT`, `frei`, `kein Fix`, und die HTML-Texte der Weboberflaeche in
+  `webupdate.cpp`. Das Geraet faehrt auf deutschen Strassen, die Anzeige
+  bleibt deutsch.
+- **Diese Datei (`CLAUDE.md`) und alle vier Dateien in `doc/content/`**
+  bleiben als fortlaufende deutsche Projektdokumentation bestehen — nur
+  diese Sprachregel-Absaetze wurden angepasst. `history.md` behaelt seine
+  bisherigen Eintraege unveraendert auf Deutsch; neue Eintraege ab
+  2026-08-14 werden auf Englisch angehaengt.
+- **`README.md`** war schon vorher Englisch (siehe unten) und bleibt es.
+
+**Funktionskopf-Kommentare und die Begruendungen in `config.h` sind
+dauerhaft zu erhalten.** Jede Funktion in Firmware, Simulator und den
+Python-Werkzeugen traegt einen Kopfkommentar (was die Funktion tut, welche
+Parameter sie braucht, wie/warum sie so funktioniert — insbesondere, wenn
+es nicht offensichtlich ist). `config.h` traegt zu jeder Konstante die
+Messung oder Abwaegung dahinter. Ein kuenftiger Aufraeum- oder
+Vereinfachungsdurchgang darf diese Kommentare **nicht** kuerzen oder
+entfernen, um die Datei "aufzuraeumen" — sie sind der Grund, warum der
+aktuelle Wert so und nicht anders gewaehlt wurde, und ihr Verlust fuehrt
+dazu, dass ein bereits gescheiterter Versuch irgendwann nochmal gemacht
+wird. Wer eine Konstante oder Funktion aendert, aktualisiert den
+zugehoerigen Kommentar mit, statt ihn zu loeschen.
 
 ## Dokumentation
 
@@ -20,8 +52,10 @@ Wer etwas Grundsaetzliches aendert oder eine Sackgasse ausmisst, schreibt einen
 Eintrag in `history.md` — die Messreihen dort haben mehrfach verhindert, dass
 dieselbe Idee ein zweites Mal geprueft wird.
 
-**`README.md` ist die bewusste Ausnahme von "alles auf Deutsch"** — sie ist
-die englischsprachige Einstiegsdokumentation fuer neue Nutzer: Hardware,
+**`README.md` ist die bewusste Ausnahme von "Projektdoku auf Deutsch"**
+(Code- und Skriptkommentare sind seit 2026-08-14 ohnehin Englisch, siehe
+oben) — sie ist die englischsprachige Einstiegsdokumentation fuer neue
+Nutzer: Hardware,
 Verkabelung, alle Features, Bauen/Flashen, der komplette Kartendaten-
 Workflow (woher die Daten kommen, wie man sie erzeugt und aufs Geraet
 bekommt — per PC oder per WLAN-Access-Point) und eine vollstaendige
@@ -224,13 +258,15 @@ umgewandelt mit:
 
 ```bash
 python3 tools/png_to_lvgl.py src/fahrrad.png src/img_fahrrad.c \
-        --name img_fahrrad --polarity hell --height 128
+        --name img_fahrrad --polarity light --height 128
 python3 tools/png_to_lvgl.py src/spielstrasse.png src/img_spielstrasse.c \
-        --name img_spielstrasse --polarity dunkel --height 128
+        --name img_spielstrasse --polarity dark --height 128
 ```
 
-`--polarity` sagt, welche Flaeche das Motiv ist: `hell` beim weissen Fahrrad
-auf blau, `dunkel` bei den schwarzen Figuren auf weiss.
+`--polarity` sagt, welche Flaeche das Motiv ist: `light` beim weissen
+Fahrrad auf blau, `dark` bei den schwarzen Figuren auf weiss. (Die
+Flag-Werte selbst sind seit der Umstellung auf englische Bedienungsstrings
+in `tools/*.py` Englisch, siehe Sprachregel oben — vorher `hell`/`dunkel`.)
 
 **Format A8** — ein Byte Deckkraft je Pixel, keine Farbe. Die Farbe kommt beim
 Zeichnen aus `image_recolor`, dasselbe Bild laesst sich also weiss auf blau und
