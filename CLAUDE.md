@@ -42,6 +42,38 @@ Die Konfigurationstabelle in der README ist eine **Landkarte, kein Ersatz**
 fuer die ausfuehrlichen Begruendungen in `config.h` selbst — dort steht das
 "warum", in der README nur das "was und wie einstellen".
 
+## Arbeitsweise & Token-Effizienz
+
+### Git-Workflow
+- NIEMALS automatisch `git commit` oder `git push` nach einem Fix/Feature.
+- Änderungen bleiben lokal, bis ich explizit "commit" oder "push" sage.
+- Ausnahme: `git status` / `git diff` zum Nachschauen ist ok, ändert nichts.
+
+### Doku-Updates (backlog.md, history.md, etc.)
+- NICHT bei jedem einzelnen Debug-Schritt oder Zwischenfix aktualisieren.
+- Nur auf explizite Anfrage ("update docs", "history schreiben") oder am Ende
+  einer abgeschlossenen Aufgabe/Session.
+- Bei mehreren Fixes in einer Session: EIN gesammelter Doku-Eintrag am Ende,
+  nicht pro Fix.
+
+### Bash-Output filtern
+- Build-/Test-Output: `| tail -5` bis `| tail -20`, nicht ungefiltert zeigen.
+  Beispiel: `pio run 2>&1 | tail -5` statt `pio run 2>&1 | tail -40`
+- curl-Debugging: `-s` (silent) verwenden, nicht `-v`, außer echtes
+  HTTP-Header-Debugging ist nötig.
+- Logs/lange Outputs: `| grep -E "ERROR|FAIL|SUCCESS"` statt Volltext.
+- Große Verzeichnisse: `find . -maxdepth 2` statt rekursiv.
+
+### Datei-Lesen
+- Gezielt mit `grep -n "pattern" file` suchen statt ganze Dateien laden.
+- Beim Lesen: nur relevante Line-Ranges, nicht komplette große Dateien.
+- Dieselbe Datei nicht mehrfach in einer Session neu einlesen — vorherigen
+  Read-Kontext wiederverwenden.
+
+### Allgemein
+- Bei mehreren unabhängigen Fixes: erst alle sammeln/planen, dann in einem
+  Rutsch umsetzen, statt Schritt für Schritt mit viel Zwischen-Output.
+
 ## Hardware
 
 - ESP32-S3-DevKitC-1, Modul N16R8 (16 MB Flash, 8 MB Octal-PSRAM)

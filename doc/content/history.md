@@ -454,3 +454,83 @@ Zwei Wege prophylaktisch durchgerechnet, beide **nicht umgesetzt**:
   schwerer als der Platzgewinn.
 
 Format bleibt MSG2 wie es ist. Nicht erneut pruefen, ohne einen neuen Grund.
+
+## 2026-08-20 — Zusatzhinweise (Naesse/Wildwechsel/Kurve/Gefahr/Eng), unabhaengig von REASON_*
+
+Frage aus der Sitzung: OSM kennt neben Zone/Kinder/Spiel/Rad/Zeit noch mehr
+Warnhinweise (Naesse, Kurve, Wildwechsel, Verengung, allgemeine Gefahrstelle)
+- gibt es die, und lohnt sich das? Gegen die Brandenburg-PBF gescannt statt
+geraten: `hazard=*` und `traffic_sign(:forward/:backward)=*` sitzen ueberwiegend
+direkt am Way (1819/1923 bzw. 61962/77236 Vorkommen), nicht an einem
+Punktknoten - waeren also genauso wie REASON_* an eine Kette anheftbar.
+`maxspeed:conditional` traegt vereinzelt "wet" ohne Uhrzeit (145 Vorkommen in
+Brandenburg), das `parse_conditional()` bisher still verschluckte, weil es nur
+auf eine Uhrzeit-Bedingung geprueft hat.
+
+**Bewusster Unterschied zu REASON_\*:** ein Zusatzhinweis ist keine
+Begruendung fuer die Zahl, sondern gilt unabhaengig davon - eine Kurve bleibt
+eine Kurve, ob das Limit 30 oder 100 ist. Deshalb eigenes Feld (Bit 3-5 im
+selben flags-Byte, `EXTRA_*` in `osm_to_grid.py` / `UI_EXTRA_*` in `ui.h`),
+nicht in die 3 verbliebenen REASON-Werte gequetscht. Drei Entscheidungen dazu,
+alle vom Nutzer bestaetigt:
+
+- **Zusatz hat Vorrang vor der Begruendung**, wenn beide auf derselben Kette
+  stehen (nur eine Beschriftungszeile vorhanden) - Sicherheitsrelevantes zuerst,
+  kein Risiko mit ungetesteten Breiten fuer eine gemeinsame Zeile.
+- **Wege ohne bekanntes Limit, aber mit Zusatzhinweis, bleiben jetzt im Grid**
+  (vorher verwarf `way()` jeden Way mit `speed==0 and cond is None` komplett).
+  Betraf in Brandenburg 18 von 175 relevanten Hazard-Ways (~10 %), ueberwiegend
+  `secondary` ohne eigenes `maxspeed`-Tag. Die Anzeige zeigt dann "?" mit
+  Beschriftung darunter - dafuer musste `scanCell()` in `speedlimit_grid.h`
+  auch Ketten mit `speed==0` als Kandidaten zulassen (vorher generell
+  uebersprungen) und am Ende von `lookup()` `speed==0` wieder auf den
+  bestehenden Vertrag "-1 = kein Limit" zurueckmappen, waehrend `last_extra_`
+  unabhaengig davon stehen bleibt.
+- **Rangfolge bei seltener Ueberschneidung auf derselben Kette:**
+  Naesse > Wildwechsel > Kurve > Gefahrstelle > Verengung - Naesse zuerst,
+  weil sie als einzige Kategorie tatsaechlich an einem Limit haengt
+  (`maxspeed:conditional`), der Rest nach Unfallschwere.
+
+**Verteilung in Brandenburg** (164.801 Ketten): 187 Wildwechsel, 112 Naesse,
+22 Kurve, 15 Gefahrstelle, 0 Verengung. Fuer `EXTRA_ENG` also bewusst keine
+Demo-Etappe - eine Karte ohne einzige Verengung-Kette kann keinen erwarteten
+Wert bestaetigen.
+
+Vier neue Demo-Etappen (`main.cpp`) mit echten, aus der neu erzeugten
+`brandenburg.msg` dekodierten Koordinaten, eine davon (Gefahrstelle in einer
+Tempo-30-Zone, 52.5366/13.4416) mit nativ vorkommender REASON+EXTRA-
+Ueberschneidung - testet die Vorrang-Regel also mit echten Daten, nicht
+konstruiert. Fuenf neue ROUTE-Etappen im Simulator (`sim/sim_main.c`),
+darunter der "?"+Kurve-Fall.
+
+`brandenburg.msg` neu erzeugt: 164.693 → 164.801 Ketten (das neue Feld ist
+Teil der Ketten-Identitaet, genau wie REASON_* schon), Dateigroesse
+unveraendert bei 2,68 MiB. Firmware und Karte geflasht, Boot-Log bestaetigt:
+`[Grid] brandenburg 222x178 Zellen, 13703 belegt, Index 107 KiB in 39 ms`.
+
+### Nebenbei gefundener und behobener Altbug: Kettenzahl im Zellkopf zu hoch
+
+Beim Bau eines Python-Decoders zum Heraussuchen echter Demo-Koordinaten stieg
+ein `IndexError` auf, weil ein Zellblock weniger Ketten enthielt, als sein
+Kopf (`varint(buf, len(chains))`) versprach. Ursache: dieser Wert wurde aus
+`len(chains)` (Ausgabe von `chain()`, **vor** dem Filtern) geschrieben, aber
+`write_region()` uebersprang dahinter einzelne Ketten per `continue`, wenn sie
+nach Quantisierung/Entdoppeln auf unter 2 Punkte zusammenfielen. Bestand seit
+MSG2 (nicht durch die Zusatzhinweis-Aenderung verursacht) und betraf jede
+`.msg`-Datei, nicht nur Brandenburg.
+
+**Nicht katastrophal, weil `scanCell()` in `speedlimit_grid.h` das ohnehin per
+Bounds-Check abfaengt** (`p < end` in der Schleifenbedingung, `if (p + 2 > end)
+return`) - eine betroffene Zelle brach die Auswertung einfach vorzeitig ab und
+verlor die restlichen, in Wahrheit gar nicht vorhandenen "Ketten" stillschweigend.
+Auf dem Geraet also nie als Absturz sichtbar, hoechstens als ein paar zu wenig
+ausgewertete Kandidaten in einzelnen Zellen.
+
+**Fix:** Kettenbytes werden jetzt in einen eigenen `chain_buf` geschrieben,
+die tatsaechlich geschriebene Anzahl mitgezaehlt (`n_written`) und der Header
+erst danach aus diesem echten Wert gebaut. Gegengeprueft mit einem strikten
+Decoder (kein Try/Except, keine Toleranz) ueber alle 13.703 Zellen der neu
+erzeugten `brandenburg.msg`: **0 Abweichungen zwischen Kopf und Inhalt**,
+vorher brach der Decoder bei Zelle 836 (cell_id 4734) ab. Ketten- und
+Punktzahl in der Statistikausgabe unveraendert (164.801 Ketten, 737.979
+Stuetzpunkte) - der Bug betraf nur den Kopf-Zaehler, nie die Nutzdaten selbst.

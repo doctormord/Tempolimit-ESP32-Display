@@ -365,7 +365,12 @@ void ui_update(const ui_state_t *s) {
    * Beschriftung darunter: nur was dem Fahrer etwas sagt. Das Einzelschild
    * ist der Normalfall und bleibt stumm, ebenso "ohne Angabe" - das waeren
    * zusammen ueber drei Viertel aller Strassen. Bei "frei" und "?" gibt es
-   * nichts zu begruenden, deshalb haengt es an has_ref.
+   * normalerweise nichts zu begruenden, deshalb haengt REASON an has_ref.
+   *
+   * Der Zusatzhinweis (EXTRA_*) ist davon unabhaengig und hat Vorrang: eine
+   * Kurve oder ein Wildwechsel ist sicherheitsrelevant, egal welches Limit
+   * gerade gilt oder ob ueberhaupt eines bekannt ist - deshalb wird er auch
+   * bei "?" und "frei" gezeigt, nur eine Zeile reicht fuer beides nicht.
    */
   char why_buf[12];
   const char *why = "";
@@ -378,6 +383,15 @@ void ui_update(const ui_state_t *s) {
       snprintf(why_buf, sizeof(why_buf), "%d", s->limit);
     }
     why = why_buf;
+  } else if (s->extra != UI_EXTRA_NONE) {
+    switch (s->extra) {
+      case UI_EXTRA_NAESSE: why = "NÄSSE"; break;
+      case UI_EXTRA_WILD:   why = "WILD"; break;
+      case UI_EXTRA_KURVE:  why = "KURVE"; break;
+      case UI_EXTRA_GEFAHR: why = "GEFAHR"; break;
+      case UI_EXTRA_ENG:    why = "ENG"; break;
+      default: break;
+    }
   } else if (has_ref) {
     switch (s->reason) {
       case UI_REASON_ZONE:   why = "ZONE"; break;

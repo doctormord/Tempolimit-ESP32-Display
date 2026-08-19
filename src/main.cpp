@@ -511,6 +511,7 @@ typedef struct {
   float speed_kmh;   // Tempo auf dieser Etappe
   int expect;        // erwartetes Limit (255 = frei, -1 = keine Daten)
   uint8_t why;       // erwartete Begruendung, 0xFF = egal
+  uint8_t why_extra; // erwarteter Zusatzhinweis, 0xFF = egal
   const char *note;
 } demo_leg_t;
 
@@ -574,23 +575,51 @@ static const demo_pt_t DP_BB[] = {
 static const demo_pt_t DP_LEER[] = {{52.200000f, 13.000000f},
                                     {52.205000f, 13.005000f}};
 
+/*
+ * Zusatzhinweise unabhaengig vom Limit (EXTRA_*, Bit 3-5) - echte Brandenburg-
+ * Strassen mit hazard-Tag, traffic_sign-Tag oder maxspeed:conditional "wet",
+ * per tools/osm_to_grid.py aus brandenburg.msg dekodiert und gegengeprueft.
+ * Fuer EXTRA_ENG (verengte Fahrbahn) gibt es in ganz Brandenburg keine
+ * einzige Kette mit gesetztem Flag - dafuer also bewusst keine Etappe, sonst
+ * stuende im Log ein erwarteter Wert, den die Karte gar nicht hergibt.
+ */
+static const demo_pt_t DP_NAESSE[] = {
+    {52.150752f, 14.679139f}, {52.151348f, 14.680196f}, {52.151876f, 14.681022f},
+    {52.152516f, 14.681876f}, {52.153872f, 14.683773f}, {52.156108f, 14.686972f}};
+static const demo_pt_t DP_WILD[] = {
+    {52.283880f, 13.216696f}, {52.284928f, 13.224669f}, {52.285284f, 13.226055f},
+    {52.287932f, 13.235148f}, {52.288736f, 13.239082f}, {52.288852f, 13.239908f}};
+static const demo_pt_t DP_KURVE[] = {
+    {52.372144f, 14.212712f}, {52.372632f, 14.213804f}, {52.372772f, 14.214070f},
+    {52.373032f, 14.214336f}, {52.373588f, 14.214644f}, {52.373952f, 14.215036f}};
+// Traegt gleichzeitig REASON_ZONE und EXTRA_GEFAHR - prueft, dass der
+// Zusatzhinweis Vorrang vor der Begruendung hat (warten auf "ZONE" waere ein
+// Fehler, es muss "GEFAHR" stehen).
+static const demo_pt_t DP_GEFAHR[] = {
+    {52.536604f, 13.441589f}, {52.535240f, 13.444753f},
+    {52.534900f, 13.445537f}, {52.534832f, 13.445656f}};
+
 #define DL(arr) arr, (uint8_t)(sizeof(arr) / sizeof(arr[0]))
 static const demo_leg_t DEMO[] = {
-    {DL(DP_30), 45.0f, 30, WHY_EGAL, "Tempo-30, zu schnell"},
-    {DL(DP_ZONE), 28.0f, 30, UI_REASON_ZONE, "Tempo-30-Zone"},
-    {DL(DP_KIND), 25.0f, 30, UI_REASON_KINDER, "Kinder / Schule"},
-    {DL(DP_SPIEL), 6.0f, 7, UI_REASON_SPIEL, "Spielstrasse"},
-    {DL(DP_RAD), 22.0f, 30, UI_REASON_RAD, "Fahrradstrasse"},
-    {DL(DP_ZEIT), 40.0f, -2, WHY_EGAL, "zeitlich begrenzt (6-18 Uhr)"},
-    {DL(DP_50), 42.0f, 50, WHY_EGAL, "Ortsdurchfahrt"},
-    {DL(DP_60), 58.0f, 60, WHY_EGAL, "Hauptstrasse"},
-    {DL(DP_80), 80.0f, 80, WHY_EGAL, "Ausfallstrasse, Balken voll"},
-    {DL(DP_100), 75.0f, 100, WHY_EGAL, "Schnellstrasse"},
+    {DL(DP_30), 45.0f, 30, WHY_EGAL, WHY_EGAL, "Tempo-30, zu schnell"},
+    {DL(DP_ZONE), 28.0f, 30, UI_REASON_ZONE, WHY_EGAL, "Tempo-30-Zone"},
+    {DL(DP_KIND), 25.0f, 30, UI_REASON_KINDER, WHY_EGAL, "Kinder / Schule"},
+    {DL(DP_SPIEL), 6.0f, 7, UI_REASON_SPIEL, WHY_EGAL, "Spielstrasse"},
+    {DL(DP_RAD), 22.0f, 30, UI_REASON_RAD, WHY_EGAL, "Fahrradstrasse"},
+    {DL(DP_ZEIT), 40.0f, -2, WHY_EGAL, WHY_EGAL, "zeitlich begrenzt (6-18 Uhr)"},
+    {DL(DP_50), 42.0f, 50, WHY_EGAL, WHY_EGAL, "Ortsdurchfahrt"},
+    {DL(DP_60), 58.0f, 60, WHY_EGAL, WHY_EGAL, "Hauptstrasse"},
+    {DL(DP_80), 80.0f, 80, WHY_EGAL, WHY_EGAL, "Ausfallstrasse, Balken voll"},
+    {DL(DP_100), 75.0f, 100, WHY_EGAL, WHY_EGAL, "Schnellstrasse"},
     // 145 statt 130: mit OVER_TOLERANCE_PCT=10 liegt die Schwelle bei 132
-    {DL(DP_120), 145.0f, 120, WHY_EGAL, "Autobahn, zu schnell"},
-    {DL(DP_FREI), 160.0f, 255, WHY_EGAL, "unbegrenzt -> frei"},
-    {DL(DP_BB), 95.0f, 100, WHY_EGAL, "Brandenburg, zweite Region"},
-    {DL(DP_LEER), 90.0f, -1, WHY_EGAL, "keine Kartendaten -> ?"},
+    {DL(DP_120), 145.0f, 120, WHY_EGAL, WHY_EGAL, "Autobahn, zu schnell"},
+    {DL(DP_FREI), 160.0f, 255, WHY_EGAL, WHY_EGAL, "unbegrenzt -> frei"},
+    {DL(DP_BB), 95.0f, 100, WHY_EGAL, WHY_EGAL, "Brandenburg, zweite Region"},
+    {DL(DP_LEER), 90.0f, -1, WHY_EGAL, WHY_EGAL, "keine Kartendaten -> ?"},
+    {DL(DP_NAESSE), 45.0f, 50, WHY_EGAL, UI_EXTRA_NAESSE, "Naesse (maxspeed:conditional wet)"},
+    {DL(DP_WILD), 62.0f, 70, WHY_EGAL, UI_EXTRA_WILD, "Wildwechsel"},
+    {DL(DP_KURVE), 55.0f, 60, WHY_EGAL, UI_EXTRA_KURVE, "Kurve"},
+    {DL(DP_GEFAHR), 26.0f, 30, UI_REASON_ZONE, UI_EXTRA_GEFAHR, "Gefahrstelle in Tempo-30-Zone"},
 };
 #define N_DEMO (sizeof(DEMO) / sizeof(DEMO[0]))
 
@@ -766,8 +795,10 @@ static volatile int blf_state = 0;  /* 0 ruhig, 1 runter, 2 halten, 3 hoch */
 static float blf_t = 0.0f;
 static int blf_limit = -999;       /* was gerade gezeigt wird */
 static uint8_t blf_reason = 0;
+static uint8_t blf_extra = 0;
 static int blf_want_limit = -999;
 static uint8_t blf_want_reason = 0;
+static uint8_t blf_want_extra = 0;
 
 
 /* Laeuft auf einem eigenen Timer, unabhaengig von der Zeichenschleife. */
@@ -1032,13 +1063,16 @@ void loop() {
                       snapshot.hour, snapshot.weekday, snapshot.time_valid,
                       alat, alon, now);
       snapshot.reason = grid.reason();
+      snapshot.extra = grid.extra();
     } else {
       snapshot.limit = -1;
       snapshot.reason = UI_REASON_NONE;
+      snapshot.extra = UI_EXTRA_NONE;
     }
 
     int real_limit = snapshot.limit;
     uint8_t real_reason = snapshot.reason;
+    uint8_t real_extra = snapshot.extra;
 
     /*
      * Ueberschreitung hier entscheiden, damit die Blende sie zusammen mit
@@ -1060,18 +1094,22 @@ void loop() {
 #if FADE_MODE == 2
     real_limit = snapshot.limit;      // fuer die Pruefung im Log
     real_reason = snapshot.reason;
+    real_extra = snapshot.extra;
     /*
      * Die Ueberschreitung loest bewusst KEINE Blende aus und wird auch nicht
      * zurueckgehalten: eine Warnung muss in dem Moment erscheinen, in dem sie
      * gilt, nicht eine Viertelsekunde spaeter nach einer Ueberblendung.
-     * Zurueckgehalten werden nur Limit und Begruendung.
+     * Zurueckgehalten werden nur Limit, Begruendung und Zusatzhinweis.
      */
-    if (snapshot.limit != blf_want_limit || snapshot.reason != blf_want_reason) {
+    if (snapshot.limit != blf_want_limit || snapshot.reason != blf_want_reason ||
+        snapshot.extra != blf_want_extra) {
       blf_want_limit = snapshot.limit;
       blf_want_reason = snapshot.reason;
+      blf_want_extra = snapshot.extra;
       if (blf_limit == -999) {          // erster Durchlauf: sofort zeigen
         blf_limit = snapshot.limit;
         blf_reason = snapshot.reason;
+        blf_extra = snapshot.extra;
       } else if (blf_state == 0) {
         blf_state = 1;
         blf_t = 0.0f;
@@ -1081,9 +1119,11 @@ void loop() {
     if (at_dark) {                      // im Dunkelpunkt umschalten
       blf_limit = blf_want_limit;
       blf_reason = blf_want_reason;
+      blf_extra = blf_want_extra;
     }
     snapshot.limit = blf_limit;
     snapshot.reason = blf_reason;
+    snapshot.extra = blf_extra;
 #endif
     ui_update(&snapshot);
 #if FADE_MODE == 2
@@ -1099,6 +1139,9 @@ void loop() {
     // Begruendung im Log mitschreiben, Reihenfolge wie UI_REASON_* in ui.h
     static const char *WHY[8] = {"-", "ZONE", "KINDER", "SPIEL",
                                  "RAD", "SCHILD", "ZEIT", "-"};
+    // Zusatzhinweis, Reihenfolge wie UI_EXTRA_* in ui.h
+    static const char *EXTRA[8] = {"-", "NAESSE", "WILD", "KURVE",
+                                   "GEFAHR", "ENG", "-", "-"};
     static uint32_t last_log = 0;
     bool do_log = (now - last_log >= LOG_INTERVAL_MS);
     if (do_log) last_log = now;
@@ -1108,6 +1151,7 @@ void loop() {
     } else if (snapshot.demo) {
       int exp = DEMO[demo_leg].expect;
       uint8_t expw = DEMO[demo_leg].why;
+      uint8_t expe = DEMO[demo_leg].why_extra;
       // Gegen den ermittelten Wert pruefen, nicht gegen den gerade
       // angezeigten - die Blende haelt den Wechsel kurz zurueck.
       /* -2 = haengt an der Uhrzeit: tagsueber 30 mit KINDER, sonst 50 ohne */
@@ -1120,10 +1164,11 @@ void loop() {
         ok = (real_limit == exp) &&
              (expw == WHY_EGAL || real_reason == expw);
       }
+      ok = ok && (expe == WHY_EGAL || real_extra == expe);
       Serial.printf("[Demo] %.5f,%.5f k=%3.0f %3.0f km/h  Limit %3d "
-                    "(erwartet %3d) %-7s %s  Cache %lu/%lu\n",
+                    "(erwartet %3d) %-7s %-7s %s  Cache %lu/%lu\n",
                     snapshot.lat, snapshot.lon, course, snapshot.speed_kmh,
-                    real_limit, exp, WHY[real_reason & 7],
+                    real_limit, exp, WHY[real_reason & 7], EXTRA[real_extra & 7],
                     ok ? "ok" : "ABWEICHUNG",
                     (unsigned long)grid.cacheHits(),
                     (unsigned long)grid.cacheReads());

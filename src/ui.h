@@ -31,6 +31,7 @@ typedef struct {
   bool time_valid;
   bool demo;         // simulierte Fahrt (kein GPS) - Statuszeile zeigt DEMO
   uint8_t reason;    // warum gilt das Limit, UI_REASON_*
+  uint8_t extra;     // Zusatzhinweis unabhaengig vom Limit, UI_EXTRA_*
   bool speedo;       // Tachomodus: Mitte zeigt Tempo statt Limit
   bool over;         // zu schnell - vom Aufrufer entschieden, siehe ui.c
 } ui_state_t;
@@ -51,6 +52,22 @@ typedef struct {
 #define UI_REASON_RAD 4      // Fahrradstrasse
 #define UI_REASON_SCHILD 5   // Einzelschild
 #define UI_REASON_ZEIT 6     // nur zeitweise gueltig
+
+/*
+ * Zusatzhinweis, unabhaengig vom Limit - eine Kurve bleibt eine Kurve, ob das
+ * Limit 30 oder 100 ist. Spiegelt EXTRA_* aus tools/osm_to_grid.py, dort in
+ * Bit 3-5 desselben flags-Byte. Anders als UI_REASON_* wird das auch gezeigt,
+ * wenn kein Limit bekannt ist (Ziffer "?") oder die Strecke frei ist - nur im
+ * Tachomodus und beim Fahrrad-/Spielstrassen-Piktogramm bleibt es stumm, weil
+ * dort kein Platz dafuer ist bzw. die Beschriftungszeile schon das gefahrene
+ * Tempo zeigt.
+ */
+#define UI_EXTRA_NONE 0
+#define UI_EXTRA_NAESSE 1     // maxspeed:conditional "wet"
+#define UI_EXTRA_WILD 2       // Wildwechsel
+#define UI_EXTRA_KURVE 3      // Kurve
+#define UI_EXTRA_GEFAHR 4     // Gefahrstelle allgemein
+#define UI_EXTRA_ENG 5        // verengte Fahrbahn
 
 void ui_create(void);
 

@@ -95,6 +95,14 @@ call proves nothing about whether the panel actually received anything.
   hours). Left blank for a plain sign or "no data" — together over 75% of
   all roads, so the common case stays uncluttered. A time-restricted
   reason only shows while the restriction is actually in effect.
+- **Extra hint.** Independent of the reason label and of the limit itself:
+  `NÄSSE` (lower limit `maxspeed:conditional` when wet), `WILD` (game
+  crossing), `KURVE` (curve warning sign), `GEFAHR` (generic hazard sign),
+  or `ENG` (narrowing road), sourced from OSM's `hazard`/`traffic_sign`
+  tags. Takes priority over the reason label when both apply (it's the
+  safety-relevant one), and — unlike the reason label — still shows even
+  when the limit itself is unknown (`?`) or unrestricted (`frei`), since a
+  curve is a curve regardless of what the sign says.
 - **Pictograms.** Bicycle streets and play streets (`verkehrsberuhigter
   Bereich`) show the real sign's pictogram (Zeichen 244.1 / 325.1) instead
   of a digit, colored to match the real sign (Verkehrsblau). The speed
@@ -412,9 +420,9 @@ external resistors):
   once the module is configured (5 Hz x RMC+GGA). Bytes staying near 0
   means nothing is arriving (check the TX(module) -> GPIO18 wire); many
   bytes with many checksum errors means wrong baud rate.
-- **Demo log line**: position, matched limit vs. expected, reason, and
-  `ok`/`ABWEICHUNG` (deviation) — the regression check for the map lookup
-  path, since a desk has no real GPS fix to test against.
+- **Demo log line**: position, matched limit vs. expected, reason, extra
+  hint, and `ok`/`ABWEICHUNG` (deviation) — the regression check for the
+  map lookup path, since a desk has no real GPS fix to test against.
 - **Draw stats**: frames/s, bus load, LVGL time, longest frame, TE wait
   time — a concrete way to back up any claim about smoothness instead of
   eyeballing it.

@@ -99,3 +99,20 @@ Regionsliste. **Noch offen:**
 Deutschland ist als MSG2 rund 42 MiB — passt nie ins Flash. Der Reader nimmt
 schon ein beliebiges `fs::FS`, es fehlt nur ein SPI-SD-Modul und das Mounten.
 Achtung: die alten SD_MMC-Pins (14/17/16) kollidieren mit Display und GPS.
+
+## 4. Zusatzhinweise mit echtem Fix gegenprüfen
+
+Seit 2026-08-20 zeigt die Anzeige `NÄSSE`/`WILD`/`KURVE`/`GEFAHR`/`ENG`
+unabhängig vom Limit (`EXTRA_*`, siehe `CLAUDE.md` und `history.md`). Bisher
+nur über die Demo-Route geprüft (echte Kartendaten, aber simulierte Fahrt).
+Offen:
+
+- Draußen mit echtem GPS-Fix an den vier verifizierten Koordinaten
+  vorbeifahren (`main.cpp`, `DP_NAESSE`/`DP_WILD`/`DP_KURVE`/`DP_GEFAHR`) —
+  erscheint der Zusatzhinweis zum richtigen Zeitpunkt, verschwindet er beim
+  Verlassen der Kette wieder zuverlässig?
+- `EXTRA_ENG` (verengte Fahrbahn) hat in ganz Brandenburg keine einzige
+  Kette — sobald eine weitere Region geladen wird, dort gezielt nach einem
+  Beispiel suchen und als fünfte Demo-Etappe ergänzen.
+- Eilt nicht: die Kategorien sind zusammen nur 0,3 % aller Ketten
+  (Brandenburg), betreffen also selten eine tatsächliche Fahrt.

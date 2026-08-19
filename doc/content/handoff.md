@@ -12,12 +12,20 @@ Das Gerät funktioniert vollständig: Display, GPS mit 5 Hz, Karte aus
 LittleFS, Map-Matching, zwei Anzeigemodi, zwei Schalter, Kartenupdate per
 WLAN-Access-Point (`src/webupdate.h`/`.cpp`, siehe `CLAUDE.md`). Zwei
 Testfahrten mit dem Fahrrad sind gemacht. Firmware und Kartendaten sind auf
-dem aktuellen Stand geflasht (2026-08-14, `pio run -t upload` und
+dem aktuellen Stand geflasht (2026-08-20, `pio run -t upload` und
 `-t uploadfs` über den USB-UART-Port), der Boot ist per Serial-Log
-bestätigt: `[FS] LittleFS: 2830336 von 13500416 Byte belegt`,
-`[Grid] brandenburg 222x178 Zellen, 13702 belegt, Index 107 KiB in 37 ms`,
+bestätigt: `[FS] LittleFS: 2834432 von 13500416 Byte belegt`,
+`[Grid] brandenburg 222x178 Zellen, 13703 belegt, Index 107 KiB in 39 ms`,
 `[Grid] 1 Region(en): brandenburg`, `[Update] AP "Tempolimit-Setup"
 gestartet, http://192.168.4.1/`.
+
+**Neu seit 2026-08-20:** Zusatzhinweise unabhängig vom Limit (`NÄSSE`,
+`WILD`, `KURVE`, `GEFAHR`, `ENG` — `EXTRA_*`/`UI_EXTRA_*`, Bit 3-5 im
+flags-Byte), siehe `CLAUDE.md` und `history.md` für Herleitung und
+Design-Entscheidungen. Dabei nebenbei ein Altbug in `write_region()`
+gefunden und behoben: der Kettenzähler im Zellkopf konnte höher sein als
+die tatsächlich geschriebenen Ketten (Details in `history.md`). Beides in
+`brandenburg.msg` und auf dem Gerät.
 
 **Aus der zweiten Testfahrt gefunden und an der Quelle behoben:** nach dem
 Abbiegen aus einer Tempo-30-Zone blieb das Limit auf 30 stehen. Ursache war
@@ -42,6 +50,10 @@ Code und der neuen Karte, aber:
   gemeldete Probleme — aber nicht einzeln bestätigt
 - eine echte Browser-Verbindung zum Access Point, ein echter Upload, eine
   echte Neustart-Übernahme (offene Einzelfragen in `backlog.md`, Punkt 1a)
+- die neuen Zusatzhinweise (`NÄSSE`/`WILD`/`KURVE`/`GEFAHR`) mit echtem
+  GPS-Fix an den verifizierten Koordinaten aus den Demo-Etappen (`main.cpp`,
+  `DP_NAESSE`/`DP_WILD`/`DP_KURVE`/`DP_GEFAHR`) — die Demo-Route bestätigt nur
+  den Datenpfad, nicht das Timing/Matching bei echter Fahrt
 
 ## Wo was liegt
 
@@ -78,8 +90,8 @@ und `src/speedlimit_grid.h` — Änderungen immer in beiden.
 `even_digit_spacing.py` laufen lassen. Die Tabellenziffern-Varianten
 (`*t.c`, für den Tacho) bewusst **ohne**.
 
-**Reihenfolge der `REASON_*`-Werte** nicht ändern, ohne die Kartendaten neu zu
-erzeugen — sie stecken in den Bits der `.msg`-Dateien.
+**Reihenfolge der `REASON_*`- und `EXTRA_*`-Werte** nicht ändern, ohne die
+Kartendaten neu zu erzeugen — sie stecken in den Bits der `.msg`-Dateien.
 
 **`applyPendingMapChanges()` muss vor `grid.begin()` laufen**, und zwar bevor
 irgendein File-Handle auf eine Regionsdatei offen ist. Grund: die
@@ -88,8 +100,9 @@ während `SpeedLimitGrid` gerade mitten aus ihr liest.
 
 ## Werkzeuge zum Prüfen
 
-**Demo-Route.** 14 Etappen auf echten Straßen, jede mit erwartetem Limit und
-erwarteter Begründung. Das Log schreibt `ABWEICHUNG`, wenn es auseinanderläuft.
+**Demo-Route.** 18 Etappen auf echten Straßen, jede mit erwartetem Limit,
+erwarteter Begründung und erwartetem Zusatzhinweis. Das Log schreibt
+`ABWEICHUNG`, wenn es auseinanderläuft.
 Erzwingen über den Schalter an GPIO5 oder:
 
 ```bash
@@ -128,3 +141,8 @@ jetzt zügig auf 50? Siehe `backlog.md`, Punkt 2.
 Danach: mit einem Handy tatsächlich mit dem AP "Tempolimit-Setup" verbinden,
 eine `.msg`-Datei hochladen, neu starten, prüfen ob die Region ankommt.
 Offene Einzelfragen dazu in `backlog.md`, Punkt 1a.
+
+Kleinerer, unabhängiger Punkt: die neuen Zusatzhinweise mit echtem Fix an
+den vier verifizierten Koordinaten gegenprüfen (siehe oben, `backlog.md`
+Punkt 4) — eilt nicht, die Kategorien sind in Brandenburg selten (0,3 % aller
+Ketten zusammen).

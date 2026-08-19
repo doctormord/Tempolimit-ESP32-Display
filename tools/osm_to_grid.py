@@ -53,9 +53,10 @@ Nutzdaten, je Zelle ein Block:
         uint8   speed       0=unbekannt, 255=unbegrenzt, sonst km/h
         uint8   flags       Bit7   = zeitliche Bedingung folgt
                             Bit0-2 = Begruendung (REASON_*, siehe unten)
-                            Bit3-6 = frei
-                            Die Begruendung kostet kein zusaetzliches Byte,
-                            weil das flags-Byte ohnehin da war.
+                            Bit3-5 = Zusatzhinweis (EXTRA_*, siehe unten)
+                            Bit6   = frei
+                            Weder Begruendung noch Zusatzhinweis kosten ein
+                            eigenes Byte, das flags-Byte war ohnehin da.
         [4 Byte Bedingung: cond_speed, hour_from, hour_to, weekdays]
         varint  n_points
         varint  zickzack(q_lat)   erster Punkt, Rasterschritte ab Zellecke
@@ -155,6 +156,59 @@ def reason_code(tags, highway):
     if any(n == "sign" for _, n in vals):
         return REASON_SCHILD
     return REASON_NONE
+
+
+# --- Zusatzhinweis (unabhaengig vom Limit) ----------------------------------
+# Anders als REASON_* ist das hier kein Grund fuer die Zahl, sondern ein
+# eigenstaendiger Warnhinweis, der unabhaengig vom Tempo gilt - eine Kurve
+# bleibt eine Kurve, ob das Limit 30 oder 100 ist. Steckt in Bit 3-5 desselben
+# flags-Byte, wieder ohne eigenes Byte zu kosten.
+#
+# Quellen: hazard=* und traffic_sign(:forward/:backward)=* sitzen meist direkt
+# an derselben Strasse wie maxspeed (in Brandenburg 1819 von 1923 hazard- bzw.
+# 61962 von 77236 traffic_sign-Vorkommen auf einem Way, nicht auf einem
+# Punktknoten). Naesse kommt dagegen aus maxspeed:conditional ("30 @ wet") -
+# das ist die einzige Kategorie, die tatsaechlich an einem Limit haengt, aber
+# ohne Uhrzeit, die parse_conditional() also nicht als REASON_ZEIT erkennt.
+#
+# Reihenfolge bei seltener Ueberschneidung auf demselben Way (z.B. Kurve UND
+# Naesse gleichzeitig): Naesse zuerst, weil sie am direktesten ans Limit
+# gebunden ist, danach nach Unfallschwere.
+EXTRA_NONE = 0
+EXTRA_NAESSE = 1        # maxspeed:conditional enthaelt "wet"
+EXTRA_WILD = 2          # hazard=animal_crossing/wild_animals, Zeichen 142
+EXTRA_KURVE = 3         # hazard=curve(s), Zeichen 101-10/-11, 103-10/-20
+EXTRA_GEFAHR = 4        # Zeichen 101 (allgemein), 112 (alte Nummer)
+EXTRA_ENG = 5           # Zeichen 120, verengte Fahrbahn
+
+_RE_SIGN_WILD = re.compile(r"\b142(-10|-20)?\b")
+_RE_SIGN_KURVE = re.compile(r"\b103(-10|-20)?\b|\b101-1[01]\b")
+_RE_SIGN_GEFAHR = re.compile(r"\b101\b|\b112\b")
+_RE_SIGN_ENG = re.compile(r"\b120\b")
+
+
+def extra_code(tags):
+    """Zusatzhinweis unabhaengig vom Limit, siehe EXTRA_* oben."""
+    cond = tags.get("maxspeed:conditional")
+    if cond and "wet" in cond.lower():
+        return EXTRA_NAESSE
+
+    hazard = tags.get("hazard")
+    signs = " ".join(v for v in (
+        tags.get("traffic_sign"),
+        tags.get("traffic_sign:forward"),
+        tags.get("traffic_sign:backward"),
+    ) if v)
+
+    if hazard in ("animal_crossing", "wild_animals") or _RE_SIGN_WILD.search(signs):
+        return EXTRA_WILD
+    if hazard in ("curve", "curves") or _RE_SIGN_KURVE.search(signs):
+        return EXTRA_KURVE
+    if _RE_SIGN_GEFAHR.search(signs):
+        return EXTRA_GEFAHR
+    if _RE_SIGN_ENG.search(signs):
+        return EXTRA_ENG
+    return EXTRA_NONE
 
 
 def klasse(speed):
@@ -289,7 +343,12 @@ class WayHandler(osmium.SimpleHandler):
             return
         speed = parse_maxspeed(w.tags.get("maxspeed"), highway)
         cond = parse_conditional(w.tags.get("maxspeed:conditional"), highway)
-        if speed == 0 and cond is None:
+        extra = extra_code(w.tags)
+        # Ohne Limit UND ohne Zusatzhinweis gibt es nichts anzuzeigen. Mit
+        # Zusatzhinweis aber ohne Limit (z.B. Kurvenschild auf einer
+        # Landstrasse ohne eigenes maxspeed-Tag) bleibt die Strasse drin -
+        # die Anzeige zeigt dann "?" mit der Zusatzbeschriftung darunter.
+        if speed == 0 and cond is None and extra == EXTRA_NONE:
             return
         why = reason_code(w.tags, highway)
         if cond is not None and why == REASON_NONE:
@@ -315,16 +374,16 @@ class WayHandler(osmium.SimpleHandler):
                  (pt[1] - GRID_ORIGIN_LON_E6) // CELL_LON_E6)
             if c != current:
                 if current is not None and len(buf) >= 2:
-                    self._store(current, speed, buf, cond, why)
+                    self._store(current, speed, buf, cond, why, extra)
                 buf = [buf[-1], pt] if buf else [pt]
                 current = c
             else:
                 buf.append(pt)
         if current is not None and len(buf) >= 2:
-            self._store(current, speed, buf, cond, why)
+            self._store(current, speed, buf, cond, why, extra)
 
-    def _store(self, cell, speed, points, cond, why):
-        self.cells[cell].append((speed, cond, why, list(points)))
+    def _store(self, cell, speed, points, cond, why, extra):
+        self.cells[cell].append((speed, cond, why, extra, list(points)))
         self.n_segments += 1
         if cond is not None:
             self.n_conditional += 1
@@ -371,23 +430,27 @@ def chain(segments, lon_scale):
     CHAIN_MAX_TURN_DEG). Das Aneinanderhängen selbst ist der eigentliche
     Hebel: erst dadurch entstehen lange Linienzüge, an denen die
     Vereinfachung überhaupt etwas findet."""
+    # Der Zusatzhinweis ist Teil der Identitaet, genau wie Tempo/Bedingung/
+    # Begruendung - sonst wuerde ein kurzes Kurvenschild-Stueck an eine lange
+    # Kette ohne Kurve verschmelzen oder umgekehrt die ganze Kette faelschlich
+    # als Kurve markieren.
     starts = defaultdict(list)
-    for i, (sp, cd, wy, p) in enumerate(segments):
-        starts[(sp, cd, wy, p[0])].append(i)
+    for i, (sp, cd, wy, ex, p) in enumerate(segments):
+        starts[(sp, cd, wy, ex, p[0])].append(i)
     used, out = set(), []
-    for i, (sp, cd, wy, p) in enumerate(segments):
+    for i, (sp, cd, wy, ex, p) in enumerate(segments):
         if i in used:
             continue
         used.add(i)
         pts = list(p)
         while True:
-            candidates = [j for j in starts.get((sp, cd, wy, pts[-1]), []) if j not in used]
+            candidates = [j for j in starts.get((sp, cd, wy, ex, pts[-1]), []) if j not in used]
             if not candidates:
                 break
             cur_bear = _bearing(pts[-2], pts[-1], lon_scale)
             best, best_diff = None, None
             for j in candidates:
-                cand_pts = segments[j][3]
+                cand_pts = segments[j][4]
                 cand_bear = _bearing(cand_pts[0], cand_pts[1], lon_scale)
                 # Ein nulllanges Segment (identische Punkte) hat keine
                 # eigene Richtung und blockiert das Verketten nicht.
@@ -398,8 +461,8 @@ def chain(segments, lon_scale):
             if best is None or best_diff > CHAIN_MAX_TURN_DEG:
                 break
             used.add(best)
-            pts.extend(segments[best][3][1:])
-        out.append((sp, cd, wy, pts))
+            pts.extend(segments[best][4][1:])
+        out.append((sp, cd, wy, ex, pts))
     return out
 
 
@@ -423,16 +486,24 @@ def write_region(handler, outdir, name):
 
     blocks, n_chains, n_points = {}, 0, 0
     why_count = defaultdict(int)
+    extra_count = defaultdict(int)
     for (r, c), segs in handler.cells.items():
         rr, cc = int(r - row0), int(c - col0)
         if not (0 <= rr < n_rows and 0 <= cc < n_cols):
             continue
         base_lat = lat_min + rr * CELL_LAT_E6
         base_lon = lon_min + cc * CELL_LON_E6
-        buf = bytearray()
+        # Chains werden in einen eigenen Puffer geschrieben, damit die
+        # Kettenzahl im Kopf erst feststeht, NACHDEM klar ist, wie viele
+        # nach dem Quantisieren/Entdoppeln tatsaechlich uebrig bleiben - vorher
+        # zaehlte len(chains) auch Ketten mit, die unten per "continue"
+        # uebersprungen werden, und der Header versprach mehr Ketten, als
+        # folgten (abgefangen von den Bounds-Checks in scanCell(), aber ein
+        # Fehler in der Datei).
+        chain_buf = bytearray()
+        n_written = 0
         chains = chain(segs, cos_lat)
-        varint(buf, len(chains))
-        for speed, cond, why, pts in chains:
+        for speed, cond, why, extra, pts in chains:
             tol = TOL_M[klasse(speed)] / M_PER_ULAT
             pts = simplify(pts, tol, cos_lat)
             q = [((la - base_lat) // q_lat, (lo - base_lon) // q_lon)
@@ -445,19 +516,24 @@ def write_region(handler, outdir, name):
                 continue
             n_chains += 1
             n_points += len(ded)
-            buf.append(speed)
-            # Bit 7 = Bedingung folgt, Bit 0-2 = Begruendung
-            buf.append((0x80 if cond else 0x00) | (why & 0x07))
+            n_written += 1
+            chain_buf.append(speed)
+            # Bit 7 = Bedingung folgt, Bit 0-2 = Begruendung, Bit 3-5 = Zusatz
+            chain_buf.append((0x80 if cond else 0x00) | (why & 0x07) | ((extra & 0x07) << 3))
             why_count[why] += 1
+            extra_count[extra] += 1
             if cond:
-                buf.extend(struct.pack("<BBBB", *cond))
-            varint(buf, len(ded))
-            varint(buf, zig(int(ded[0][0])))
-            varint(buf, zig(int(ded[0][1])))
+                chain_buf.extend(struct.pack("<BBBB", *cond))
+            varint(chain_buf, len(ded))
+            varint(chain_buf, zig(int(ded[0][0])))
+            varint(chain_buf, zig(int(ded[0][1])))
             for a, b in zip(ded, ded[1:]):
-                varint(buf, zig(int(b[0] - a[0])))
-                varint(buf, zig(int(b[1] - a[1])))
-        if len(buf) > 1:
+                varint(chain_buf, zig(int(b[0] - a[0])))
+                varint(chain_buf, zig(int(b[1] - a[1])))
+        if n_written > 0:
+            buf = bytearray()
+            varint(buf, n_written)
+            buf += chain_buf
             blocks[rr * n_cols + cc] = bytes(buf)
 
     ids = sorted(blocks)
@@ -497,6 +573,13 @@ def write_region(handler, outdir, name):
     for k in sorted(why_count, key=lambda x: -why_count[x]):
         print(f"   {names.get(k, k):<16} {why_count[k]:>8,}  "
               f"({100.0*why_count[k]/max(n_chains,1):4.1f} %)")
+    extra_names = {EXTRA_NONE: "ohne Zusatz", EXTRA_NAESSE: "Naesse",
+                   EXTRA_WILD: "Wildwechsel", EXTRA_KURVE: "Kurve",
+                   EXTRA_GEFAHR: "Gefahrstelle", EXTRA_ENG: "Verengung"}
+    print("Zusatzhinweise   :")
+    for k in sorted(extra_count, key=lambda x: -extra_count[x]):
+        print(f"   {extra_names.get(k, k):<16} {extra_count[k]:>8,}  "
+              f"({100.0*extra_count[k]/max(n_chains,1):4.1f} %)")
     print(f"Kopf + Index     : {(64 + len(index))/1024:.1f} KiB")
     print(f"Nutzdaten        : {len(data)/1048576:.2f} MiB")
     print(f"Datei            : {path}  {size/1048576:.2f} MiB")

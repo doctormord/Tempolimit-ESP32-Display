@@ -59,6 +59,10 @@ class SpeedLimitGrid {
   // Begruendung des zuletzt gelieferten Limits (REASON_* aus osm_to_grid.py,
   // gespiegelt als UI_REASON_* in ui.h). 0 = keine Angabe.
   uint8_t reason() const { return last_reason_; }
+  // Zusatzhinweis, unabhaengig vom Limit (EXTRA_* aus osm_to_grid.py,
+  // gespiegelt als UI_EXTRA_* in ui.h). Gilt auch, wenn lookup() -1 liefert -
+  // eine Strasse kann ein Kurvenschild tragen, ohne dass ihr Limit bekannt ist.
+  uint8_t extra() const { return last_extra_; }
 
   uint32_t cacheHits() const { return cache_hits_; }
   uint32_t cacheReads() const { return cache_reads_; }
@@ -135,6 +139,7 @@ class SpeedLimitGrid {
     if (cx.best_speed < 0 || cx.best_dist > MATCH_MAX_DIST_M) {
       last_speed_ = -1;
       last_reason_ = 0;
+      last_extra_ = 0;
       return -1;
     }
     /*
@@ -161,9 +166,20 @@ class SpeedLimitGrid {
                    (now_ms - hold_since_ms_) < MATCH_HYSTERESIS_MAX_MS;
     int new_speed = hyst_ok ? cx.prev_speed : cx.best_speed;
     uint8_t new_reason = hyst_ok ? cx.prev_reason : cx.best_reason;
+    uint8_t new_extra = hyst_ok ? cx.prev_extra : cx.best_extra;
+    /*
+     * new_speed kann 0 sein: eine Strasse ohne bekanntes Limit, aber mit
+     * Zusatzhinweis (z.B. Kurvenschild auf einer Landstrasse ohne eigenes
+     * maxspeed-Tag, siehe way() in osm_to_grid.py). Nach aussen bleibt der
+     * Vertrag "-1 = kein Limit bekannt" gueltig, last_extra_ traegt den
+     * Zusatzhinweis trotzdem weiter - die Anzeige zeigt dann "?" mit
+     * Beschriftung.
+     */
+    if (new_speed == 0) new_speed = -1;
     if (new_speed != last_speed_) hold_since_ms_ = now_ms;
     last_speed_ = new_speed;
     last_reason_ = new_reason;
+    last_extra_ = new_extra;
     return new_speed;
   }
 
@@ -195,9 +211,11 @@ class SpeedLimitGrid {
     float best_score, best_dist;
     int best_speed;
     uint8_t best_reason;
+    uint8_t best_extra;
     float prev_score, prev_dist;
     int prev_speed;
     uint8_t prev_reason;
+    uint8_t prev_extra;
   };
 
   struct CellSlot {
@@ -218,6 +236,7 @@ class SpeedLimitGrid {
   bool ready_ = false;
   int last_speed_ = -1;
   uint8_t last_reason_ = 0;
+  uint8_t last_extra_ = 0;
   // Seit wann last_speed_ den aktuellen Wert traegt - Basis der
   // zeitlich begrenzten Hysterese, siehe lookup().
   uint32_t hold_since_ms_ = 0;
@@ -380,7 +399,10 @@ class SpeedLimitGrid {
       if (p + 2 > end) return;
       int speed = *p++;
       uint8_t flags = *p++;
-      uint8_t why = flags & 0x07;   // Bit0-2: Begruendung
+      uint8_t why = flags & 0x07;           // Bit0-2: Begruendung
+      // Bit3-5: Zusatzhinweis - unabhaengig vom Limit, deshalb ausserhalb
+      // des condActive()-Zweigs unten und nie zurueckgesetzt.
+      uint8_t extra = (flags >> 3) & 0x07;
       if (flags & 0x80) {
         if (p + 4 > end) return;
         uint8_t cs = p[0], hf = p[1], ht = p[2], wd = p[3];
@@ -413,8 +435,11 @@ class SpeedLimitGrid {
         int32_t blat = qa * (int32_t)R.q_lat;
         int32_t blon = qb * (int32_t)R.q_lon;
 
-        // speed==0 heisst: nur eine Bedingung, die gerade nicht greift
-        if (speed > 0) {
+        // speed==0 heisst entweder: nur eine Bedingung, die gerade nicht
+        // greift, oder eine Strasse ohne bekanntes Limit, aber mit
+        // Zusatzhinweis (extra!=0) - die bleibt dann trotzdem ein Kandidat,
+        // damit z.B. ein Kurvenschild auch ohne Limit-Match gefunden wird.
+        if (speed > 0 || extra != 0) {
           float d = pointSegDist(cx.plat, cx.plon, alat, alon, blat, blon,
                                  cx.m_per_ulat, cx.m_per_ulon);
           float score = d;
@@ -439,12 +464,14 @@ class SpeedLimitGrid {
               cx.best_dist = d;
               cx.best_speed = speed;
               cx.best_reason = why;
+              cx.best_extra = extra;
             }
             if (last_speed_ > 0 && speed == last_speed_ && score < cx.prev_score) {
               cx.prev_score = score;
               cx.prev_dist = d;
               cx.prev_speed = speed;
               cx.prev_reason = why;
+              cx.prev_extra = extra;
             }
           }
         }

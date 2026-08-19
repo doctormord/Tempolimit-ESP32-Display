@@ -39,20 +39,28 @@ typedef struct {
   float target_speed;
   int hold_ms;
   uint8_t reason;
+  uint8_t extra;   // Zusatzhinweis unabhaengig vom Limit, UI_EXTRA_*
   const char *note;
 } leg_t;
 
 static const leg_t ROUTE[] = {
-    {50, 30, 4000, UI_REASON_NONE, "Ortsdurchfahrt, gemuetlich"},
-    {50, 58, 4000, UI_REASON_NONE, "zu schnell -> Flaeche wird rot"},
-    {30, 30, 3000, UI_REASON_ZONE, "Tempo-30-Zone"},
-    {30, 28, 3000, UI_REASON_KINDER, "Kinder / Schule"},
-    {7, 6, 3000, UI_REASON_SPIEL, "Spielstrasse"},
-    {30, 20, 3000, UI_REASON_RAD, "Fahrradstrasse"},
-    {100, 85, 4000, UI_REASON_NONE, "Landstrasse"},
-    {255, 160, 4000, UI_REASON_NONE, "unbegrenzt -> Balken leer"},
-    {-1, 90, 3000, UI_REASON_NONE, "keine Kartendaten -> Fragezeichen"},
-    {120, 60, 4000, UI_REASON_NONE, "Autobahn, halbe Fuellung"},
+    {50, 30, 4000, UI_REASON_NONE, UI_EXTRA_NONE, "Ortsdurchfahrt, gemuetlich"},
+    {50, 58, 4000, UI_REASON_NONE, UI_EXTRA_NONE, "zu schnell -> Flaeche wird rot"},
+    {30, 30, 3000, UI_REASON_ZONE, UI_EXTRA_NONE, "Tempo-30-Zone"},
+    {30, 28, 3000, UI_REASON_KINDER, UI_EXTRA_NONE, "Kinder / Schule"},
+    {7, 6, 3000, UI_REASON_SPIEL, UI_EXTRA_NONE, "Spielstrasse"},
+    {30, 20, 3000, UI_REASON_RAD, UI_EXTRA_NONE, "Fahrradstrasse"},
+    {100, 85, 4000, UI_REASON_NONE, UI_EXTRA_NONE, "Landstrasse"},
+    {255, 160, 4000, UI_REASON_NONE, UI_EXTRA_NONE, "unbegrenzt -> Balken leer"},
+    {-1, 90, 3000, UI_REASON_NONE, UI_EXTRA_NONE, "keine Kartendaten -> Fragezeichen"},
+    {120, 60, 4000, UI_REASON_NONE, UI_EXTRA_NONE, "Autobahn, halbe Fuellung"},
+    {50, 45, 3000, UI_REASON_NONE, UI_EXTRA_NAESSE, "Naesse"},
+    {70, 62, 3000, UI_REASON_NONE, UI_EXTRA_WILD, "Wildwechsel"},
+    {60, 55, 3000, UI_REASON_NONE, UI_EXTRA_KURVE, "Kurve"},
+    // Zusatzhinweis hat Vorrang: trotz UI_REASON_ZONE muss "GEFAHR" stehen,
+    // nicht "ZONE".
+    {30, 26, 3000, UI_REASON_ZONE, UI_EXTRA_GEFAHR, "Gefahrstelle in Zone (Zusatz siegt)"},
+    {-1, 40, 3000, UI_REASON_NONE, UI_EXTRA_KURVE, "Kurve ohne bekanntes Limit -> ? + KURVE"},
 };
 #define N_LEGS (sizeof(ROUTE) / sizeof(ROUTE[0]))
 
@@ -78,6 +86,7 @@ int main(void) {
       .time_valid = true,
       .demo = false,   // der Simulator zeigt die Anzeige wie mit echtem Fix
       .reason = UI_REASON_ZONE,
+      .extra = UI_EXTRA_NONE,
       .course = 137.0f,
       .speedo = false,
       .over = false,
@@ -100,6 +109,7 @@ int main(void) {
       leg = (leg + 1) % N_LEGS;
       st.limit = ROUTE[leg].limit;
       st.reason = ROUTE[leg].reason;
+      st.extra = ROUTE[leg].extra;
       printf("-> %s (Limit %d)\n", ROUTE[leg].note, ROUTE[leg].limit);
       fflush(stdout);
     }
